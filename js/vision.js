@@ -22,6 +22,59 @@ class BuildingVisionEngine {
   }
 
   /**
+   * Loads an image safely from URL or Base64 data string
+   * @param {string} src
+   * @returns {Promise<HTMLImageElement>}
+   */
+  loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Unable to load image: " + src));
+      img.src = src;
+    });
+  }
+
+  /**
+   * Renders preview and defect overlay onto an HTML5 Canvas
+   * @param {HTMLImageElement} img
+   * @param {HTMLCanvasElement} canvas
+   * @param {Object} [analysis]
+   */
+  renderOverlay(img, canvas, analysis) {
+    if (!canvas || !img) return;
+    const ctx = canvas.getContext("2d");
+    const targetW = 600;
+    const aspect = (img.naturalHeight || 400) / (img.naturalWidth || 600);
+    canvas.width = targetW;
+    canvas.height = Math.round(targetW * aspect);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    const crackSev = (analysis && analysis.crackSeverity) || "minor";
+    const hudColor = crackSev === "critical" ? "#ef4444" : crackSev === "moderate" ? "#f59e0b" : "#38bdf8";
+    ctx.strokeStyle = hudColor;
+    ctx.lineWidth = 3;
+
+    // Corner HUD markers
+    ctx.beginPath();
+    ctx.moveTo(15, 45); ctx.lineTo(15, 15); ctx.lineTo(45, 15); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(canvas.width - 45, 15); ctx.lineTo(canvas.width - 15, 15); ctx.lineTo(canvas.width - 15, 45); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(15, canvas.height - 45); ctx.lineTo(15, canvas.height - 15); ctx.lineTo(45, canvas.height - 15); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(canvas.width - 45, canvas.height - 15); ctx.lineTo(canvas.width - 15, canvas.height - 15); ctx.lineTo(canvas.width - 15, canvas.height - 45); ctx.stroke();
+
+    // HUD Status Box
+    ctx.fillStyle = "rgba(7, 12, 24, 0.75)";
+    ctx.fillRect(15, 15, 220, 32);
+    ctx.fillStyle = hudColor;
+    ctx.font = "bold 11px JetBrains Mono, monospace";
+    ctx.fillText(`TELEMETRY: ${crackSev.toUpperCase()}`, 25, 35);
+  }
+
+  /**
    * Identifies calibrated ground-truth for known municipal benchmarks
    * @param {string} urlOrData
    * @returns {Object|null}

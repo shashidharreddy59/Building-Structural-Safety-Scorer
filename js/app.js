@@ -1,1739 +1,1777 @@
 /**
  * Building Structural Safety Scorer — Application Controller
- * Handles UI interactions, photo ingestion, Computer Vision scanning,
- * assessment orchestration, and municipal queue prioritization.
- *
- * Hardened for security (XSS prevention, CSV injection mitigation, URL sanitization)
- * and enhanced for clean modern municipal aesthetics.
+ * Internal Dataset Persistence, Red-Flag Critical Hazard Triage,
+ * Side-Drawer Elevation Scanner, and Field Officer Emergency Dispatch System.
  */
+(function () {
+  "use strict";
 
-/* ==========================================================================
-   Security Utilities & Data Sanitizers
-   ========================================================================== */
+  /* ======================================================================
+   * Helpers & Sanitizers
+   * ==================================================================== */
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const fmtDate = d => d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const fmtLong = d => d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const refreshIcons = () => { if (window.lucide && window.lucide.createIcons) window.lucide.createIcons(); };
 
-/**
- * Escapes characters to prevent Cross-Site Scripting (XSS) in HTML templates
- * @param {*} str
- * @returns {string}
- */
-function escapeHtml(str) {
-  if (str === null || str === undefined) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+  const STORE_KEY = "bsss_registry_v5";
+  const DISPATCH_KEY = "bsss_dispatches_v1";
+  const THEME_KEY = "bsss_theme";
 
-/**
- * Sanitizes spreadsheet cells to prevent CSV formula injection (DDE attacks)
- * Prepends a single quote if the cell starts with =, +, -, @, \t, or \r
- * @param {*} value
- * @returns {string}
- */
-function sanitizeCsvCell(value) {
-  if (value === null || value === undefined) return '""';
-  let str = String(value).trim();
-  if (/^[=+\-@\t\r]/.test(str)) {
-    str = "'" + str;
-  }
-  return `"${str.replace(/"/g, '""')}"`;
-}
+  let currentTheme = localStorage.getItem(THEME_KEY) || "dark";
 
-/**
- * Validates and sanitizes image URLs against rogue schemes (e.g. javascript:)
- * @param {string} url
- * @returns {string}
- */
-function sanitizeImageUrl(url) {
-  if (!url || typeof url !== "string") return "";
-  const trimmed = url.trim();
-  if (/^(data:image\/(png|jpeg|jpg|webp|svg\+xml);base64,|blob:|https?:\/\/|images\/|\/images\/)/i.test(trimmed)) {
-    return trimmed;
-  }
-  return "";
-}
-
-/**
- * Validates image file type and size before reading
- * @param {File} file
- * @returns {{valid: boolean, message?: string}}
- */
-function validateImageFile(file) {
-  if (!file) return { valid: false, message: "No file was selected." };
-  const validTypes = ["image/jpeg", "image/png", "image/webp"];
-  if (!validTypes.includes(file.type)) {
-    return { valid: false, message: "Invalid image format. Please upload JPEG, PNG, or WEBP." };
-  }
-  const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-  if (file.size > MAX_SIZE_BYTES) {
-    return { valid: false, message: "Image exceeds 10MB limit. Please upload a smaller file." };
-  }
-  return { valid: true };
-}
-
-/* ==========================================================================
-   Architectural SVG Generator & Sample Presets
-   ========================================================================== */
-
-function createFacadeSvg(type, color, floors = 4, hasCracks = false) {
-  const safeColor = ["#64748b", "#d97706", "#475569", "#334155", "#0f172a"].includes(color) ? color : "#64748b";
-  const safeType = escapeHtml(type);
-  const floorCount = Math.max(1, Math.min(6, parseInt(floors, 10) || 4));
-
-  const crackLines = hasCracks ? `
-    <path d="M 60 50 Q 75 90 90 140 T 105 210" stroke="#ef4444" stroke-width="2.5" fill="none" stroke-dasharray="2,2"/>
-    <path d="M 120 80 Q 140 120 130 180" stroke="#ef4444" stroke-width="2" fill="none"/>
-    <circle cx="90" cy="140" r="4" fill="#dc2626"/>
-  ` : '';
-
-  const windows = [];
-  const startY = 40;
-  const rowHeight = 35;
-  for (let r = 0; r < floorCount; r++) {
-    for (let c = 0; c < 4; c++) {
-      windows.push(`<rect x="${25 + c * 45}" y="${startY + r * rowHeight}" width="28" height="22" rx="2" fill="#cbd5e1" stroke="#475569" stroke-width="1.5"/>`);
+  function applyTheme(theme) {
+    currentTheme = theme;
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* ignore */ }
+    const icon = $("themeIcon");
+    const label = $("themeLabel");
+    if (icon) {
+      icon.setAttribute("data-lucide", theme === "light" ? "moon" : "sun");
+      icon.className = theme === "light" ? "w-3.5 h-3.5 text-indigo-400" : "w-3.5 h-3.5 text-amber-400";
     }
+    if (label) {
+      label.textContent = theme === "light" ? "Dark Mode" : "Light Mode";
+    }
+    refreshIcons();
   }
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 260" width="200" height="260">
-    <rect width="200" height="260" fill="#f1f5f9"/>
-    <rect x="15" y="20" width="170" height="230" rx="4" fill="${safeColor}" stroke="#334155" stroke-width="2"/>
-    <rect x="75" y="200" width="50" height="50" fill="#1e293b"/>
-    <text x="100" y="235" font-family="sans-serif" font-size="9" fill="#94a3b8" text-anchor="middle">${safeType}</text>
-    ${windows.join('')}
-    ${crackLines}
-  </svg>`;
-
-  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
-}
-
-// 1-Click Preset Samples for Instant Testing
-const SAMPLE_PRESETS = {
-  cracked_brick: {
-    id: "B-201",
-    name: "Old Textile Mill & Warehouse Facility",
-    address: "14 North Industrial Zone, Sector 4",
-    material: "Brick",
-    floors: 3,
-    age: 68,
-    maintenance: 2,
-    codeCompliant: false,
-    inspectionAgo: 11,
-    occupancy: "Industrial",
-    photo: "images/cracked_brick_warehouse.jpg",
-    vision: {
-      name: "Old Textile Mill & Warehouse Facility",
-      buildingTypology: "Industrial Warehouse / Textile Mill",
-      primaryMaterial: "Brick",
-      materialDetails: {
-        composition: "Load-Bearing Fired Red Clay Masonry with Lime Mortar",
-        confidence: 0.94,
-        visualCues: ["Visible brick bond courses", "Terracotta surface reflection", "Lime-cement mortar joints", "Moisture efflorescence"]
-      },
-      floors: 3,
-      estimatedAgeYears: 68,
-      ageDetails: {
-        era: "Mid-20th Century (circa 1952 - 1968)",
-        indicators: ["Deep carbonation & weathering patina", "Pre-modern window header detailing without expansion joints", "Lime leaching staining"]
-      },
-      detectedItems: [
-        "Primary Red Brick Elevation",
-        "Load-Bearing Masonry Piers",
-        "Storey Slabs (3 Floor Levels)",
-        "⚠️ Diagonal Shear Crack Network",
-        "Roofline Parapet Boundary"
-      ],
-      crackSeverity: "critical",
-      engine: "Computer Vision Heuristics",
-      confidenceScore: 0.94,
-      detectedDefects: [
-        { name: "Structural Shear Crack Network", details: "Major diagonal stress fractures along load-bearing masonry piers.", deduction: 15, severity: "danger" },
-        { name: "Brick Mortar Delamination", details: "Weathered binder loss and moisture ingress visible.", deduction: 8, severity: "warning" }
-      ],
-      aiSummary: "Visual scan identifies pre-modern industrial brick masonry mill. Active diagonal shear fractures indicate urgent collapse hazard under lateral load."
-    }
-  },
-  modern_tower: {
-    id: "B-202",
-    name: "Skyline Financial Corporate Tower",
-    address: "88 Financial Plaza, Central District",
-    material: "Steel",
-    floors: 14,
-    age: 6,
-    maintenance: 9,
-    codeCompliant: true,
-    inspectionAgo: 1,
-    occupancy: "Commercial",
-    photo: "images/modern_steel_tower.jpg",
-    vision: {
-      name: "Skyline Financial Corporate Tower",
-      buildingTypology: "Commercial High-Rise Office Tower",
-      primaryMaterial: "Steel",
-      materialDetails: {
-        composition: "Engineered Structural Steel Frame & Unitized Glazing",
-        confidence: 0.96,
-        visualCues: ["High metallic/glass reflectivity", "Modular curtain wall mullions", "Prefabricated column profiles"]
-      },
-      floors: 14,
-      estimatedAgeYears: 6,
-      ageDetails: {
-        era: "Contemporary Modern Era (circa 2018 - 2024)",
-        indicators: ["High-performance double glazing", "Sealed elastomeric silicone expansion joints", "Zero surface carbonation"]
-      },
-      detectedItems: [
-        "Structural Glazed Curtain Envelope",
-        "Steel Column Framing Matrix",
-        "High-Rise Storey Levels (14 floors)",
-        "Ground Floor Glazed Portal",
-        "Rooftop Mechanical Penthouse"
-      ],
-      crackSeverity: "none",
-      engine: "Computer Vision Heuristics",
-      confidenceScore: 0.96,
-      detectedDefects: [
-        { name: "Pristine Facade Envelope", details: "Curtain wall and structural connections show zero physical degradation.", deduction: 0, severity: "info" }
-      ],
-      aiSummary: "Modern engineered steel-framed high-rise facade. Structural envelope, joints, and fire-proofing in pristine condition."
-    }
-  },
-  aging_school: {
-    id: "B-203",
-    name: "Municipal Boys High School Campus Block",
-    address: "32 Academic Drive, Education Ward",
-    material: "RCC",
-    floors: 4,
-    age: 46,
-    maintenance: 4,
-    codeCompliant: true,
-    inspectionAgo: 8,
-    occupancy: "School",
-    photo: "images/aging_concrete_school.jpg",
-    vision: {
-      name: "Municipal Boys High School Campus Block",
-      buildingTypology: "Educational / Institutional Block",
-      primaryMaterial: "RCC",
-      materialDetails: {
-        composition: "Cast-in-Place Reinforced Concrete (RCC) Moment Frame",
-        confidence: 0.91,
-        visualCues: ["Aggregate cementitious texture", "Monolithic beam-column intersections", "Formwork surface patterns"]
-      },
-      floors: 4,
-      estimatedAgeYears: 46,
-      ageDetails: {
-        era: "Late 20th Century (circa 1975 - 1985)",
-        indicators: ["Weathered exterior lime wash", "Hairline crazing on sunshades/chajjas", "Rebar corrosion rust streaks"]
-      },
-      detectedItems: [
-        "Reinforced Concrete Facade Frame",
-        "Classroom Fenestration Band (4 Storeys)",
-        "Cantilevered Balcony Sunshades",
-        "Corridor Support Columns",
-        "Exterior Plaster Spalling Region"
-      ],
-      crackSeverity: "moderate",
-      engine: "Computer Vision Heuristics",
-      confidenceScore: 0.91,
-      detectedDefects: [
-        { name: "Exterior Plaster Spalling", details: "Carbonation and rebar corrosion staining under 2nd floor sills.", deduction: 8, severity: "warning" }
-      ],
-      aiSummary: "Aging reinforced concrete educational facility. Noticeable rebar oxidation staining and spalling requiring remedial plastering."
-    }
-  },
-  heritage_hall: {
-    id: "B-102",
-    name: "Municipal Heritage Community Hall",
-    address: "8 Old Town Square, East Zone",
-    material: "Wood",
-    floors: 2,
-    age: 65,
-    maintenance: 2,
-    codeCompliant: false,
-    inspectionAgo: 9,
-    occupancy: "Public",
-    photo: "images/heritage_timber_hall.jpg",
-    vision: {
-      name: "Municipal Heritage Community Hall",
-      buildingTypology: "Historic Timber Municipal Hall",
-      primaryMaterial: "Wood",
-      materialDetails: {
-        composition: "Heavy Timber Post-and-Beam with Aged Wood Cladding",
-        confidence: 0.95,
-        visualCues: ["Deep vertical timber grain", "Aged pitch gable framing", "Weathered cladding", "Traditional mullion windows"]
-      },
-      floors: 2,
-      estimatedAgeYears: 65,
-      detectedItems: [
-        "Heavy Timber Post-and-Beam Structure",
-        "Aged Exterior Wood Siding",
-        "Historic Pitch Roof Truss System",
-        "⚠️ Joint Deflection & Termite Wear Region",
-        "Ground Level Municipal Entrance Portal"
-      ],
-      crackSeverity: "critical",
-      engine: "Gemini Nano / CV Telemetry",
-      confidenceScore: 0.95,
-      detectedDefects: [
-        { name: "Timber Sag & Joint Fatigue", details: "Decay and joint deflection along roof truss support columns.", deduction: 12, severity: "danger" }
-      ],
-      aiSummary: "Visual scan identifies 65-year historic wooden structure with acute joint fatigue requiring immediate timber retrofitting."
-    }
-  },
-  hospital_annex: {
-    id: "B-103",
-    name: "Central General Hospital - Annex C",
-    address: "52 Medical Avenue, Ward 6",
-    material: "RCC",
-    floors: 5,
-    age: 42,
-    maintenance: 4,
-    codeCompliant: false,
-    inspectionAgo: 7,
-    occupancy: "Hospital",
-    photo: "images/hospital_annex_concrete.jpg",
-    vision: {
-      name: "Central General Hospital - Annex C",
-      buildingTypology: "Institutional Healthcare Facility",
-      primaryMaterial: "RCC",
-      materialDetails: {
-        composition: "Cast-in-Place Reinforced Concrete Frame",
-        confidence: 0.93,
-        visualCues: ["Aggressive surface efflorescence", "Emergency bay opening", "Thermal shear cracks along lintels"]
-      },
-      floors: 5,
-      estimatedAgeYears: 42,
-      detectedItems: [
-        "Reinforced Concrete Exterior Shear Wall",
-        "Hospital Emergency Bay Portal",
-        "Fenestration Bands (5 Floors)",
-        "⚠️ Diagonal Facade Shear Cracks",
-        "Cantilevered Parapet Slab"
-      ],
-      crackSeverity: "moderate",
-      engine: "Gemini Nano / CV Telemetry",
-      confidenceScore: 0.93,
-      detectedDefects: [
-        { name: "Facade Shear Fractures", details: "Visible diagonal shear cracking along 3rd and 4th floor columns.", deduction: 9, severity: "warning" }
-      ],
-      aiSummary: "Medium-high risk hospital annex with visible shear cracking and overdue statutory structural audit."
-    }
+  function toggleTheme() {
+    const next = currentTheme === "light" ? "dark" : "light";
+    applyTheme(next);
+    toast(`Switched to ${next === "light" ? "Light" : "Dark"} Mode.`, "info");
   }
-};
 
-const DEFAULT_BUILDINGS = [
-  new Building({
-    buildingId: "B-101",
-    name: "North Star Textile Mill",
-    address: "14 Industrial Belt, Zone 3",
-    ageYears: 72,
-    primaryMaterial: "Brick",
-    maintenanceScore: 2,
-    codeCompliant: false,
-    lastInspectionYearsAgo: 12,
-    floors: 3,
-    occupancyType: "Industrial",
-    photoDataUrl: SAMPLE_PRESETS.cracked_brick.photo,
-    visionAnalysis: SAMPLE_PRESETS.cracked_brick.vision
-  }),
-  new Building({
-    buildingId: "B-102",
-    name: "Municipal Heritage Community Hall",
-    address: "8 Old Town Square, East Zone",
-    ageYears: 65,
-    primaryMaterial: "Wood",
-    maintenanceScore: 2,
-    codeCompliant: false,
-    lastInspectionYearsAgo: 9,
-    floors: 2,
-    occupancyType: "Public",
-    photoDataUrl: "images/heritage_timber_hall.jpg",
-    visionAnalysis: SAMPLE_PRESETS.heritage_hall.vision
-  }),
-  new Building({
-    buildingId: "B-103",
-    name: "Central General Hospital - Annex C",
-    address: "52 Medical Avenue, Ward 6",
-    ageYears: 42,
-    primaryMaterial: "RCC",
-    maintenanceScore: 4,
-    codeCompliant: false,
-    lastInspectionYearsAgo: 7,
-    floors: 5,
-    occupancyType: "Hospital",
-    photoDataUrl: "images/hospital_annex_concrete.jpg",
-    visionAnalysis: SAMPLE_PRESETS.hospital_annex.vision
-  }),
-  new Building({
-    buildingId: "B-104",
-    name: "Sunrise Plaza Commercial Center",
-    address: "108 Ring Road, South Zone",
-    ageYears: 24,
-    primaryMaterial: "Steel",
-    maintenanceScore: 7,
-    codeCompliant: true,
-    lastInspectionYearsAgo: 3,
-    floors: 8,
-    occupancyType: "Commercial",
-    photoDataUrl: "images/sunrise_commercial_plaza.jpg",
-    visionAnalysis: {
-      name: "Sunrise Plaza Commercial Center",
-      buildingTypology: "Commercial Office / Retail Complex",
-      primaryMaterial: "Steel",
-      floors: 8,
-      estimatedAgeYears: 24,
-      detectedItems: ["Glazed Curtain Wall", "Structural Steel Frame", "Street Level Storefronts"],
-      crackSeverity: "none",
-      engine: "Gemini Nano / CV Telemetry",
-      confidenceScore: 0.96,
-      aiSummary: "Modern engineered structural steel commercial building with curtain glass facade in sound condition."
-    }
-  }),
-  new Building({
-    buildingId: "B-105",
-    name: "Azure Bay Luxury Apartments",
-    address: "4 Seaside Promenade, West Zone",
-    ageYears: 5,
-    primaryMaterial: "RCC",
-    maintenanceScore: 9,
-    codeCompliant: true,
-    lastInspectionYearsAgo: 1,
-    floors: 14,
-    occupancyType: "Residential",
-    photoDataUrl: "images/azure_bay_apartments.jpg",
-    visionAnalysis: {
-      name: "Azure Bay Luxury Apartments",
-      buildingTypology: "Coastal Residential High-Rise",
-      primaryMaterial: "RCC",
-      floors: 14,
-      estimatedAgeYears: 5,
-      detectedItems: ["Cantilevered Curved Balconies", "Marine-Grade Concrete Frame", "Seaside Entrance"],
-      crackSeverity: "none",
-      engine: "Gemini Nano / CV Telemetry",
-      confidenceScore: 0.97,
-      aiSummary: "Contemporary high-rise coastal residential tower with post-tensioned slabs in pristine condition."
-    }
-  })
-];
-
-/* ==========================================================================
-   Application State & Persistence
-   ========================================================================== */
-
-const assessmentEngine = new SafetyAssessmentEngine();
-const visionEngine = new BuildingVisionEngine();
-
-let buildingStore = [];
-let activeFilter = "All";
-let currentPhotoBase64 = null;
-let currentVisionResult = null;
-let editingBuildingId = null;
-let webcamStream = null;
-
-const STORAGE_KEY = "municipal_structural_safety_store_v3";
-
-const $ = id => document.getElementById(id);
-
-function saveStore() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildingStore));
-  } catch (err) {
-    console.error("Storage error:", err);
-    if (err && err.name === "QuotaExceededError") {
-      showToast("Storage quota reached. Storing data without image payloads.");
-      try {
-        const lightweight = buildingStore.map(b => ({
-          ...b,
-          photoDataUrl: b.photoDataUrl && b.photoDataUrl.length > 500 ? null : b.photoDataUrl
-        }));
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweight));
-      } catch (innerErr) {
-        console.error("Critical storage failure:", innerErr);
-      }
-    }
-  }
-}
-
-function loadStore() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Validate and instantiate objects safely
-        buildingStore = parsed.map(p => new Building(p));
-        // Upgrade any legacy SVG placeholders to photorealistic images
-        buildingStore.forEach(b => {
-          if (!b.photoDataUrl || b.photoDataUrl.includes("data:image/svg+xml") || b.photoDataUrl.includes("TIMBER") || b.photoDataUrl.includes("HOSPITAL") || b.photoDataUrl.includes("COMMERCIAL")) {
-            if (b.buildingId === "B-102") b.photoDataUrl = "images/heritage_timber_hall.jpg";
-            else if (b.buildingId === "B-103") b.photoDataUrl = "images/hospital_annex_concrete.jpg";
-            else if (b.buildingId === "B-104") b.photoDataUrl = "images/sunrise_commercial_plaza.jpg";
-            else if (b.buildingId === "B-105") b.photoDataUrl = "images/azure_bay_apartments.jpg";
-            else if (b.primaryMaterial === "Brick") b.photoDataUrl = "images/cracked_brick_warehouse.jpg";
-            else if (b.primaryMaterial === "Wood") b.photoDataUrl = "images/heritage_timber_hall.jpg";
-            else if (b.primaryMaterial === "Steel") b.photoDataUrl = "images/sunrise_commercial_plaza.jpg";
-            else b.photoDataUrl = "images/hospital_annex_concrete.jpg";
-          }
+  if (typeof BuildingVisionEngine !== "undefined") {
+    if (!BuildingVisionEngine.prototype.loadImage) {
+      BuildingVisionEngine.prototype.loadImage = function (src) {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error("Unable to load image: " + src));
+          img.src = src;
         });
-        saveStore();
-        return;
+      };
+    }
+    if (!BuildingVisionEngine.prototype.renderOverlay) {
+      BuildingVisionEngine.prototype.renderOverlay = function (img, canvas, analysis) {
+        if (!canvas || !img) return;
+        const ctx = canvas.getContext("2d");
+        const targetW = 600;
+        const aspect = (img.naturalHeight || 400) / (img.naturalWidth || 600);
+        canvas.width = targetW;
+        canvas.height = Math.round(targetW * aspect);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      };
+    }
+  }
+
+  const engine = new SafetyAssessmentEngine();
+  const vision = new BuildingVisionEngine();
+
+  /* Tailwind CSS class strings */
+  const RISK_PILL = {
+    CRITICAL: "bg-red-600 text-white shadow-sm",
+    HIGH: "bg-orange-500/20 text-orange-300 border border-orange-500/40",
+    MEDIUM: "bg-amber-500/20 text-amber-300 border border-amber-500/40",
+    LOW: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+  };
+  const RISK_BAR = {
+    CRITICAL: "bg-red-600",
+    HIGH: "bg-orange-500",
+    MEDIUM: "bg-amber-500",
+    LOW: "bg-emerald-500"
+  };
+  const GRADE_BG = {
+    A: "bg-emerald-500 text-white shadow-md shadow-emerald-500/30",
+    B: "bg-lime-500 text-white shadow-md shadow-lime-500/30",
+    C: "bg-amber-500 text-white shadow-md shadow-amber-500/30",
+    D: "bg-orange-500 text-white shadow-md shadow-orange-500/30",
+    F: "bg-red-600 text-white shadow-md shadow-red-600/30"
+  };
+  const SEV_TEXT = { danger: "text-red-400", warning: "text-amber-400", info: "text-sky-300" };
+  const SEV_BADGE = {
+    danger: "bg-red-950/60 text-red-300 border border-red-500/40",
+    warning: "bg-amber-950/60 text-amber-300 border border-amber-500/40",
+    info: "bg-sky-950/60 text-sky-300 border border-sky-500/40"
+  };
+  const DISTRESS_STYLE = {
+    critical: "border-red-500/60 bg-red-950/40 text-red-300",
+    moderate: "border-amber-500/60 bg-amber-950/40 text-amber-300",
+    minor: "border-yellow-500/60 bg-yellow-950/40 text-yellow-300",
+    none: "border-emerald-500/60 bg-emerald-950/40 text-emerald-300"
+  };
+  const DISTRESS_TEXT = {
+    critical: ["Critical Structural Distress Flagged", "Long fracture lines or deep spalling detected. Mandatory immediate engineering dispatch."],
+    moderate: ["Moderate Surface Distress", "Localised cracking or dampness detected. Schedule detailed structural inspection."],
+    minor: ["Minor Surface Weathering", "Cosmetic surface lines or hairline crazing only. Monitor on routine cycle."],
+    none: ["No Dominant Distress Detected", "Surface integrity appears sound in facade telemetry."]
+  };
+  const TOAST_STYLE = {
+    success: "border-l-4 border-emerald-500 bg-slate-900 text-white",
+    error: "border-l-4 border-red-500 bg-slate-900 text-white",
+    warn: "border-l-4 border-amber-500 bg-slate-900 text-white",
+    info: "border-l-4 border-sky-500 bg-slate-900 text-white"
+  };
+
+  /* ======================================================================
+   * Internal Default Dataset (12 Realistic Municipal Structures)
+   * ==================================================================== */
+  const DEFAULT_INTERNAL_DATASET = [
+    {
+      buildingId: "B-101",
+      name: "The Old Foundry & Ironworks Mill",
+      address: "148 Mill Street, Industrial Ward 4",
+      ageYears: 122,
+      primaryMaterial: "Brick",
+      maintenanceScore: 2,
+      codeCompliant: false,
+      lastInspectionYearsAgo: 14,
+      floors: 4,
+      occupancyType: "Industrial",
+      photoDataUrl: "images/cracked_brick_warehouse.jpg",
+      visionAnalysis: {
+        engine: "Benchmark sample (curated)", name: "The Old Foundry & Ironworks Mill", buildingTypology: "Industrial brick foundry / warehouse",
+        primaryMaterial: "Brick", floors: 4, estimatedAgeYears: 122, crackSeverity: "critical", maintenanceScore: 2, confidenceScore: 0.94,
+        detectedItems: ["Load-bearing brick piers", "Arched window heads", "Full-height diagonal shear fracture", "Iron fire escape"],
+        detectedDefects: [{ name: "Full-height diagonal shear crack", details: "Stepped crack through brick courses from roofline to ground sill.", deduction: 10, severity: "danger" }],
+        aiSummary: "A four-storey load-bearing brick structure with severe diagonal shear cracking. Immediate field cordoning required."
+      },
+      dispatchStatus: "NONE"
+    },
+    {
+      buildingId: "B-102",
+      name: "Heritage Timber Civic Hall",
+      address: "Old Town Square, Civic Ward 2",
+      ageYears: 95,
+      primaryMaterial: "Wood",
+      maintenanceScore: 4,
+      codeCompliant: true,
+      lastInspectionYearsAgo: 9,
+      floors: 2,
+      occupancyType: "Assembly",
+      photoDataUrl: "images/heritage_timber_hall.jpg",
+      visionAnalysis: {
+        engine: "Benchmark sample (curated)", name: "Heritage Timber Civic Hall", buildingTypology: "Timber-framed civic hall",
+        primaryMaterial: "Wood", floors: 2, estimatedAgeYears: 95, crackSeverity: "moderate", maintenanceScore: 4, confidenceScore: 0.85,
+        detectedItems: ["Timber post-and-board frame", "Pitched roof", "Base moisture staining", "Split board bay"],
+        detectedDefects: [{ name: "Timber plinth decay", details: "Persistent damp rot along lower sill plates.", deduction: 6, severity: "warning" }],
+        aiSummary: "Timber civic assembly hall showing moisture decay at the plinth level. Combustible load and rot require audit."
+      },
+      dispatchStatus: "NONE"
+    },
+    {
+      buildingId: "B-103",
+      name: "St. Jude's Municipal Public School",
+      address: "School Lane, Education Ward 9",
+      ageYears: 52,
+      primaryMaterial: "RCC",
+      maintenanceScore: 3,
+      codeCompliant: false,
+      lastInspectionYearsAgo: 8,
+      floors: 5,
+      occupancyType: "School",
+      photoDataUrl: "images/aging_concrete_school.jpg",
+      visionAnalysis: {
+        engine: "Benchmark sample (curated)", name: "St. Jude's Municipal Public School", buildingTypology: "Educational block",
+        primaryMaterial: "RCC", floors: 5, estimatedAgeYears: 52, crackSeverity: "moderate", maintenanceScore: 3, confidenceScore: 0.89,
+        detectedItems: ["RCC column-slab frame", "Deep window ledges", "Corrosion rust staining", "Spalled panel joints"],
+        detectedDefects: [{ name: "Rebar spalling and corrosion", details: "Rust streaks beneath slab ledges with cover delamination.", deduction: 8, severity: "danger" }],
+        aiSummary: "Concrete school block with widespread rust staining indicating reinforcement corrosion. Cover-meter survey required."
+      },
+      dispatchStatus: "NONE"
+    },
+    {
+      buildingId: "B-104",
+      name: "Central General Hospital - Annex C",
+      address: "Civil Lines, Healthcare Ward 7",
+      ageYears: 34,
+      primaryMaterial: "RCC",
+      maintenanceScore: 6,
+      codeCompliant: true,
+      lastInspectionYearsAgo: 4,
+      floors: 6,
+      occupancyType: "Hospital",
+      photoDataUrl: "images/hospital_annex_concrete.jpg",
+      visionAnalysis: {
+        engine: "Benchmark sample (curated)", name: "Central General Hospital - Annex C", buildingTypology: "Healthcare annex",
+        primaryMaterial: "RCC", floors: 6, estimatedAgeYears: 34, crackSeverity: "minor", maintenanceScore: 6, confidenceScore: 0.82,
+        detectedItems: ["RCC frame", "Entrance canopy", "Hairline window cracks"],
+        detectedDefects: [{ name: "Hairline plaster cracks", details: "Thermal movement above window heads.", deduction: 2, severity: "info" }],
+        aiSummary: "Mid-rise hospital annex in fair condition with minor thermal hairline cracking."
+      },
+      dispatchStatus: "NONE"
+    },
+    {
+      buildingId: "B-105",
+      name: "Sunrise Commercial Plaza",
+      address: "Market Road, Commercial Ward 5",
+      ageYears: 12,
+      primaryMaterial: "RCC",
+      maintenanceScore: 8,
+      codeCompliant: true,
+      lastInspectionYearsAgo: 3,
+      floors: 4,
+      occupancyType: "Commercial",
+      photoDataUrl: "images/sunrise_commercial_plaza.jpg",
+      dispatchStatus: "NONE"
+    },
+    {
+      buildingId: "B-106",
+      name: "Aurora CBD Tower",
+      address: "Financial District, Central Ward 1",
+      ageYears: 8,
+      primaryMaterial: "Steel",
+      maintenanceScore: 9,
+      codeCompliant: true,
+      lastInspectionYearsAgo: 1,
+      floors: 24,
+      occupancyType: "Commercial",
+      photoDataUrl: "images/modern_steel_tower.jpg",
+      visionAnalysis: {
+        engine: "Benchmark sample (curated)", name: "Aurora CBD Tower", buildingTypology: "Modern commercial tower",
+        primaryMaterial: "Steel", floors: 24, estimatedAgeYears: 8, crackSeverity: "none", maintenanceScore: 9, confidenceScore: 0.95,
+        detectedItems: ["Steel moment frame", "Glazed curtain wall", "Podium entrance canopy"],
+        detectedDefects: [],
+        aiSummary: "Glazed curtain wall steel high-rise in pristine condition. Routine annual fire and joint audit."
+      },
+      dispatchStatus: "NONE"
+    },
+    {
+      buildingId: "B-107",
+      name: "Azure Bay Coastal Apartments",
+      address: "18 Marine Promenade, Coastal Ward 8",
+      ageYears: 48,
+      primaryMaterial: "RCC",
+      maintenanceScore: 2,
+      codeCompliant: false,
+      lastInspectionYearsAgo: 11,
+      floors: 7,
+      occupancyType: "Residential",
+      photoDataUrl: "images/azure_bay_apartments.jpg",
+      visionAnalysis: {
+        engine: "Benchmark sample (curated)", name: "Azure Bay Coastal Apartments", buildingTypology: "Residential multi-storey",
+        primaryMaterial: "RCC", floors: 7, estimatedAgeYears: 48, crackSeverity: "critical", maintenanceScore: 2, confidenceScore: 0.91,
+        detectedItems: ["RCC cantilevers", "Chloride salt pitting", "Balcony slab delamination", "Exposed rusty rebar"],
+        detectedDefects: [{ name: "Marine chloride reinforcement loss", details: "Severe spalling on seaward cantilever balconies with over 30% rebar section loss.", deduction: 10, severity: "danger" }],
+        aiSummary: "Coastal residential high-density block suffering severe chloride attack and balcony delamination. Cordoning needed."
+      },
+      dispatchStatus: "NONE"
+    },
+    {
+      buildingId: "B-108",
+      name: "Old City Hall Heritage Wing",
+      address: "Council Avenue, Heritage Ward 3",
+      ageYears: 88,
+      primaryMaterial: "Brick",
+      maintenanceScore: 3,
+      codeCompliant: false,
+      lastInspectionYearsAgo: 12,
+      floors: 3,
+      occupancyType: "Public",
+      photoDataUrl: "images/distressed_concrete_cityhall.jpg",
+      dispatchStatus: "NONE"
+    },
+    {
+      buildingId: "B-109",
+      name: "Apex Logistics Freight Terminal",
+      address: "Cargo Way, Logistics Ward 11",
+      ageYears: 18,
+      primaryMaterial: "Steel",
+      maintenanceScore: 8,
+      codeCompliant: true,
+      lastInspectionYearsAgo: 2,
+      floors: 2,
+      occupancyType: "Industrial",
+      photoDataUrl: "images/glass_curtain_office.jpg",
+      dispatchStatus: "NONE"
+    },
+    {
+      buildingId: "B-110",
+      name: "Victoria Market Timber Pavilions",
+      address: "Bazaar Cross Road, Ward 6",
+      ageYears: 76,
+      primaryMaterial: "Wood",
+      maintenanceScore: 3,
+      codeCompliant: false,
+      lastInspectionYearsAgo: 9,
+      floors: 2,
+      occupancyType: "Assembly",
+      photoDataUrl: "images/wooden_heritage_lodge.jpg",
+      dispatchStatus: "NONE"
+    },
+    {
+      buildingId: "B-111",
+      name: "Riverside Medical Research Annex",
+      address: "Riverbank Parkway, Ward 10",
+      ageYears: 14,
+      primaryMaterial: "RCC",
+      maintenanceScore: 8,
+      codeCompliant: true,
+      lastInspectionYearsAgo: 1,
+      floors: 5,
+      occupancyType: "Hospital",
+      photoDataUrl: "images/hospital_annex_concrete.jpg",
+      dispatchStatus: "NONE"
+    },
+    {
+      buildingId: "B-112",
+      name: "Urban West Heights Block D",
+      address: "94 Sector 12 Boulevard, Ward 12",
+      ageYears: 28,
+      primaryMaterial: "RCC",
+      maintenanceScore: 7,
+      codeCompliant: true,
+      lastInspectionYearsAgo: 3,
+      floors: 8,
+      occupancyType: "Residential",
+      photoDataUrl: "images/urban_brick_apartments.jpg",
+      dispatchStatus: "NONE"
+    }
+  ];
+
+  /* Benchmark Preset Mapping for Side Inspector */
+  const PRESETS = {
+    cracked_brick: {
+      name: "The Old Foundry Workshops", address: "148 Mill Street, Industrial Ward 4", age: 122, floors: 4, material: "Brick", occupancy: "Industrial", maintenance: 2, audit: 14, compliant: false,
+      photo: "images/cracked_brick_warehouse.jpg",
+      vision: DEFAULT_INTERNAL_DATASET[0].visionAnalysis
+    },
+    timber_hall: {
+      name: "Heritage Timber Civic Hall", address: "Old Town Square, Civic Ward 2", age: 95, floors: 2, material: "Wood", occupancy: "Assembly", maintenance: 4, audit: 9, compliant: true,
+      photo: "images/heritage_timber_hall.jpg",
+      vision: DEFAULT_INTERNAL_DATASET[1].visionAnalysis
+    },
+    hospital_annex: {
+      name: "Central General Hospital - Annex C", address: "Civil Lines, Healthcare Ward 7", age: 34, floors: 6, material: "RCC", occupancy: "Hospital", maintenance: 6, audit: 4, compliant: true,
+      photo: "images/hospital_annex_concrete.jpg",
+      vision: DEFAULT_INTERNAL_DATASET[3].visionAnalysis
+    },
+    concrete_school: {
+      name: "St. Jude's Municipal Public School", address: "School Lane, Education Ward 9", age: 52, floors: 5, material: "RCC", occupancy: "School", maintenance: 3, audit: 8, compliant: false,
+      photo: "images/aging_concrete_school.jpg",
+      vision: DEFAULT_INTERNAL_DATASET[2].visionAnalysis
+    },
+    steel_tower: {
+      name: "Aurora CBD Tower", address: "Financial District, Central Ward 1", age: 8, floors: 24, material: "Steel", occupancy: "Commercial", maintenance: 9, audit: 1, compliant: true,
+      photo: "images/modern_steel_tower.jpg",
+      vision: DEFAULT_INTERNAL_DATASET[5].visionAnalysis
+    }
+  };
+
+  /* ======================================================================
+   * State Management & Persistence
+   * ==================================================================== */
+  let buildings = [];
+  let dispatches = [];
+  let filter = "all";
+  let query = "";
+  let sortKey = "risk";
+  let currentPage = 1;
+  let pageSize = 25;
+  let editingId = null;
+  let editingCreatedAt = null;
+  let currentPhoto = null;
+  let currentVision = null;
+  let targetDispatchId = null;
+  let scanToken = 0;
+  let cameraStream = null;
+
+  function loadStore() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data && Array.isArray(data.buildings) && data.buildings.length >= 500) {
+          return data.buildings.map(b => new Building(b));
+        }
+      }
+    } catch (e) { /* fallback */ }
+    if (typeof window !== "undefined" && window.MUNICIPAL_1000_DATASET && Array.isArray(window.MUNICIPAL_1000_DATASET) && window.MUNICIPAL_1000_DATASET.length > 0) {
+      return window.MUNICIPAL_1000_DATASET.map(b => new Building(b));
+    }
+    return DEFAULT_INTERNAL_DATASET.map(b => new Building(b));
+  }
+
+  function saveStore() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ v: 3, buildings: buildings }));
+      return true;
+    } catch (e) {
+      try {
+        const light = buildings.map(b => Object.assign({}, b, { photoDataUrl: b.photoDataUrl && /^data:image\/(jpeg|png|webp)/.test(b.photoDataUrl) ? null : b.photoDataUrl }));
+        localStorage.setItem(STORE_KEY, JSON.stringify({ v: 3, buildings: light }));
+        return true;
+      } catch (e2) {
+        toast("Storage quota limit reached. Data will persist in memory.", "warn");
+        return false;
       }
     }
-  } catch (err) {
-    console.warn("Could not load from localStorage, initializing defaults:", err);
-  }
-  buildingStore = DEFAULT_BUILDINGS.map(b => new Building(b));
-  saveStore();
-}
-
-/* ==========================================================================
-   UI Helpers & Formatting
-   ========================================================================== */
-
-const RISK_BADGES = {
-  LOW: "bg-emerald-100 text-emerald-800 border-emerald-300",
-  MEDIUM: "bg-amber-100 text-amber-800 border-amber-300",
-  HIGH: "bg-orange-100 text-orange-800 border-orange-300",
-  CRITICAL: "bg-red-100 text-red-800 border-red-300"
-};
-
-const RISK_ACCENTS = {
-  LOW: "text-emerald-600",
-  MEDIUM: "text-amber-600",
-  HIGH: "text-orange-600",
-  CRITICAL: "text-red-600"
-};
-
-const GRADE_PILLS = {
-  LOW: "bg-emerald-600 text-white",
-  MEDIUM: "bg-amber-500 text-white",
-  HIGH: "bg-orange-500 text-white",
-  CRITICAL: "bg-red-600 text-white"
-};
-
-/* ==========================================================================
-   Queue Table Rendering (Event-Delegated & XSS-Hardened)
-   ========================================================================== */
-
-function renderQueueTable() {
-  // Sort by lowest score (most dangerous structures first)
-  const assessed = buildingStore.map(b => assessmentEngine.assess(b)).sort((a, b) => a.totalScore - b.totalScore);
-
-  updateKPIs(assessed);
-
-  const rawQuery = ($("searchQueue") ? $("searchQueue").value : "").trim().toLowerCase();
-  
-  // Update clear search button visibility
-  if ($("btnClearSearch")) {
-    $("btnClearSearch").classList.toggle("hidden", !rawQuery);
   }
 
-  const filtered = assessed.filter(res => {
-    const b = res.building;
-    const matchesQuery = !rawQuery ||
-      b.buildingId.toLowerCase().includes(rawQuery) ||
-      b.name.toLowerCase().includes(rawQuery) ||
-      b.address.toLowerCase().includes(rawQuery) ||
-      b.primaryMaterial.toLowerCase().includes(rawQuery) ||
-      b.occupancyType.toLowerCase().includes(rawQuery);
-
-    if (!matchesQuery) return false;
-
-    if (activeFilter === "Urgent Only") return res.requiresUrgentInspection;
-    if (activeFilter === "Critical") return res.riskLevel === "CRITICAL";
-    if (activeFilter === "High") return res.riskLevel === "HIGH";
-    if (activeFilter === "Medium") return res.riskLevel === "MEDIUM";
-    if (activeFilter === "Low") return res.riskLevel === "LOW";
-    return true;
-  });
-
-  // Update table counter badge & mobile tab badge
-  if ($("queueCounterBadge")) {
-    $("queueCounterBadge").textContent = `${filtered.length} of ${assessed.length} Structures`;
-  }
-  if ($("mobileQueueCountBadge")) {
-    $("mobileQueueCountBadge").textContent = assessed.length;
+  function loadDispatches() {
+    try {
+      const raw = localStorage.getItem(DISPATCH_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (Array.isArray(d)) return d;
+      }
+    } catch (e) { /* fallback */ }
+    return [];
   }
 
-  const tbody = $("queueTableBody");
-  $("emptyQueueMsg").classList.toggle("hidden", filtered.length > 0);
-
-  tbody.innerHTML = filtered.map((res, index) => {
-    const b = res.building;
-    const isUrgent = res.requiresUrgentInspection;
-    const safeThumb = sanitizeImageUrl(b.photoDataUrl) || createFacadeSvg(b.primaryMaterial, "#64748b", b.floors);
-
-    return `
-      <tr class="hover:bg-slate-50/90 transition group border-b border-slate-100 ${editingBuildingId === b.buildingId ? 'bg-amber-50/60' : ''}">
-        <td class="px-4 py-3.5 text-slate-500 font-bold text-xs whitespace-nowrap">
-          <span class="inline-flex items-center justify-center w-6 h-6 rounded-full font-mono text-[11px] font-bold ${index < 3 ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-slate-100 text-slate-700'}">
-            #${index + 1}
-          </span>
-        </td>
-        <td class="px-4 py-3.5">
-          <div class="flex items-center gap-3">
-            <div class="relative w-12 h-14 rounded-lg overflow-hidden bg-slate-200 border border-slate-300 flex-shrink-0 cursor-pointer shadow-xs group-hover:scale-105 transition" data-action="photo" data-id="${escapeHtml(b.buildingId)}" title="Click to enlarge facade image">
-              <img src="${safeThumb}" alt="Facade" class="w-full h-full object-cover">
-            </div>
-            <div>
-              <div class="font-bold text-slate-900 flex items-center gap-1.5 font-heading text-sm">
-                <span>${escapeHtml(b.name)}</span>
-                ${b.codeCompliant ? '<i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-500" title="Code Compliant"></i>' : '<i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-red-500" title="Code Non-Compliant"></i>'}
-              </div>
-              <div class="text-xs text-slate-500 font-mono mt-0.5">${escapeHtml(b.buildingId)} &bull; ${escapeHtml(b.address)}</div>
-              <div class="text-[11px] text-slate-400 mt-0.5">
-                <span class="font-semibold text-slate-600">${escapeHtml(b.primaryMaterial)}</span> &bull; 
-                ${escapeHtml(b.occupancyType)} &bull; 
-                ${b.floors} fl &bull; 
-                ${b.ageYears} yrs &bull; 
-                Maint: <span class="font-bold ${b.maintenanceScore <= 3 ? 'text-red-600' : 'text-slate-700'}">${b.maintenanceScore}/10</span>
-              </div>
-            </div>
-          </div>
-        </td>
-        <td class="px-4 py-3.5 whitespace-nowrap">
-          <div class="flex items-baseline gap-1.5">
-            <span class="text-2xl font-black font-heading ${RISK_ACCENTS[res.riskLevel]}">${res.totalScore.toFixed(1)}</span>
-            <span class="text-xs font-bold px-1.5 py-0.5 rounded-md ${GRADE_PILLS[res.riskLevel]} font-mono">Gr ${res.grade}</span>
-          </div>
-        </td>
-        <td class="px-4 py-3.5 whitespace-nowrap">
-          <span class="inline-flex items-center gap-1.5 border px-2.5 py-1 rounded-full text-xs font-bold ${RISK_BADGES[res.riskLevel]}">
-            <span class="w-1.5 h-1.5 rounded-full ${res.riskLevel === 'CRITICAL' || res.riskLevel === 'HIGH' ? 'bg-red-600 animate-ping' : 'bg-current'}"></span>
-            ${res.riskLevel}
-          </span>
-        </td>
-        <td class="px-4 py-3.5 whitespace-nowrap">
-          ${isUrgent
-            ? '<span class="inline-flex items-center gap-1 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-xs badge-urgent-pulse"><i data-lucide="siren" class="w-3.5 h-3.5"></i> URGENT</span>'
-            : '<span class="text-xs font-medium text-slate-400">Routine</span>'
-          }
-        </td>
-        <td class="px-4 py-3.5 text-right whitespace-nowrap space-x-1.5">
-          <button type="button" data-action="audit" data-id="${escapeHtml(b.buildingId)}" class="btn-lift inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition shadow-xs" title="View Detailed Structural Audit">
-            <i data-lucide="clipboard-check" class="w-3.5 h-3.5 text-sky-600"></i>
-            <span>Audit</span>
-          </button>
-          <button type="button" data-action="edit" data-id="${escapeHtml(b.buildingId)}" class="btn-lift inline-flex items-center gap-1 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-semibold px-2 py-1.5 rounded-lg transition shadow-xs" title="Load into form for re-assessment">
-            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
-          </button>
-          <button type="button" data-action="delete" data-id="${escapeHtml(b.buildingId)}" class="btn-lift inline-flex items-center text-slate-400 hover:text-red-600 p-1.5 rounded-lg transition hover:bg-red-50" title="Delete record">
-            <i data-lucide="trash-2" class="w-4 h-4"></i>
-          </button>
-        </td>
-      </tr>
-    `;
-  }).join("");
-
-  if (window.lucide) lucide.createIcons();
-}
-
-function updateKPIs(assessed) {
-  const total = assessed.length;
-  const urgentCount = assessed.filter(r => r.requiresUrgentInspection).length;
-  const avgScore = total ? (assessed.reduce((sum, r) => sum + r.totalScore, 0) / total).toFixed(1) : "0.0";
-  const compliantCount = assessed.filter(r => r.building.codeCompliant).length;
-  const compRate = total ? Math.round((compliantCount / total) * 100) : 0;
-
-  if ($("kpiTotal")) $("kpiTotal").textContent = total;
-  if ($("kpiUrgent")) $("kpiUrgent").textContent = urgentCount;
-  if ($("kpiAvg")) $("kpiAvg").textContent = avgScore;
-  if ($("kpiComp")) $("kpiComp").textContent = compRate + "%";
-}
-
-/* ==========================================================================
-   Form Real-Time Simulator & Live Calculations
-   ========================================================================== */
-
-function readCurrentFormValues() {
-  return new Building({
-    buildingId: $("fId").value.trim() || "PREVIEW",
-    name: $("fName").value.trim() || "Simulated Structure",
-    address: $("fAddr").value.trim() || "Site Location",
-    ageYears: parseInt($("fAge").value, 10) || 0,
-    primaryMaterial: $("fMat").value,
-    maintenanceScore: parseInt($("fMaint").value, 10) || 7,
-    codeCompliant: $("fComp").checked,
-    lastInspectionYearsAgo: parseInt($("fInsp").value, 10) || 0,
-    floors: parseInt($("fFloors").value, 10) || 1,
-    occupancyType: $("fOcc").value,
-    photoDataUrl: currentPhotoBase64,
-    visionAnalysis: currentVisionResult
-  });
-}
-
-function updateLiveSimulator() {
-  $("fMaintVal").textContent = $("fMaint").value;
-  const b = readCurrentFormValues();
-  const res = assessmentEngine.assess(b);
-
-  const scoreEl = $("simScore");
-  const gradeEl = $("simGrade");
-  const riskEl = $("simRisk");
-  const urgentEl = $("simUrgent");
-  const breakdownEl = $("simFormulaBreakdown");
-
-  scoreEl.textContent = res.totalScore.toFixed(1);
-  scoreEl.className = `text-4xl font-black font-heading tracking-tight ${RISK_ACCENTS[res.riskLevel]}`;
-
-  gradeEl.textContent = `Grade ${res.grade}`;
-  gradeEl.className = `px-2.5 py-0.5 rounded-full text-xs font-bold text-white shadow-xs font-mono ${GRADE_PILLS[res.riskLevel]}`;
-
-  riskEl.textContent = `${res.riskLevel} RISK`;
-  riskEl.className = `text-xs font-extrabold uppercase tracking-wider ${RISK_ACCENTS[res.riskLevel]}`;
-
-  if (res.requiresUrgentInspection) {
-    urgentEl.innerHTML = '<span class="inline-flex items-center gap-1 text-red-600 font-bold"><i data-lucide="alert-octagon" class="w-3.5 h-3.5"></i> Urgent Inspection Required</span>';
-  } else {
-    urgentEl.innerHTML = '<span class="text-slate-500 font-medium">Standard Municipal Schedule</span>';
+  function saveDispatches() {
+    try { localStorage.setItem(DISPATCH_KEY, JSON.stringify(dispatches)); } catch (e) { /* ignore */ }
   }
 
-  if (res.findings.length === 0) {
-    breakdownEl.innerHTML = `<span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-300 font-semibold">Base: 100.0 (Zero Deductions &bull; Max Safety)</span>`;
-  } else {
-    const chips = [];
-    chips.push(`<span class="bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded">Base: 100</span>`);
-    res.findings.forEach(f => {
-      chips.push(`<span class="bg-red-100 text-red-700 px-1.5 py-0.5 rounded border border-red-200 cursor-help" title="${escapeHtml(f.description)}">-${f.deduction.toFixed(0)} (${escapeHtml(f.category)})</span>`);
+  /* ======================================================================
+   * Toasts & Modals
+   * ==================================================================== */
+  function toast(message, type) {
+    const host = $("toastHost");
+    if (!host) return;
+    const el = document.createElement("div");
+    el.className = "toast-in pointer-events-auto rounded-xl px-4 py-3 text-xs font-semibold shadow-2xl ring-1 ring-slate-700/80 " + (TOAST_STYLE[type] || TOAST_STYLE.info);
+    el.textContent = message;
+    host.appendChild(el);
+    setTimeout(() => el.remove(), type === "error" ? 6000 : 3800);
+  }
+
+  function openModal(id) { const m = $(id); if (m) { m.classList.add("open"); refreshIcons(); } }
+  function closeModal(id) {
+    const m = $(id);
+    if (m) m.classList.remove("open");
+    if (id === "webcamModal") stopCamera();
+  }
+
+  let confirmResolver = null;
+  function confirmDialog(title, message, okText) {
+    $("confirmTitle").textContent = title;
+    $("confirmMsg").textContent = message;
+    $("confirmOk").textContent = okText || "Confirm";
+    openModal("confirmModal");
+    return new Promise(resolve => { confirmResolver = resolve; });
+  }
+  function settleConfirm(v) {
+    closeModal("confirmModal");
+    if (confirmResolver) { confirmResolver(v); confirmResolver = null; }
+  }
+
+  /* ======================================================================
+   * Side Drawer Controller (Camera & Elevation Scanner)
+   * ==================================================================== */
+  function openSideScanner() {
+    $("sideDrawerBackdrop").classList.add("active");
+    $("sideScannerDrawer").classList.add("open");
+    refreshIcons();
+  }
+
+  function closeSideScanner() {
+    $("sideDrawerBackdrop").classList.remove("active");
+    $("sideScannerDrawer").classList.remove("open");
+  }
+
+  /* ======================================================================
+   * Scoring & Prioritization
+   * ==================================================================== */
+  function assessAll() {
+    const results = buildings.map(b => engine.assess(b));
+    const byRisk = results.slice().sort((a, b) =>
+      Number(a.totalScore < 50) - Number(b.totalScore < 50) === 0
+        ? a.totalScore - b.totalScore
+        : (a.totalScore < 50 ? -1 : 1)
+    );
+    const rank = new Map();
+    byRisk.forEach((r, i) => rank.set(r.building.buildingId, i + 1));
+    return { results, byRisk, rank };
+  }
+
+  function dueText(res) {
+    if (res.totalScore >= 75.0) return "Routine Annual Cycle";
+    if (res.totalScore >= 50.0) return "60 Days Municipal SLA";
+    return res.totalScore < 30 ? "Immediate (24 Hours SLA)" : "Urgent (14 Days SLA)";
+  }
+
+  /* ======================================================================
+   * Workspace View Switching & Layout Management
+   * ==================================================================== */
+  let currentView = "queue";
+
+  function switchView(viewName) {
+    currentView = viewName;
+    document.querySelectorAll("[data-nav-view]").forEach(tab => {
+      const active = tab.dataset.navView === viewName;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
     });
-    breakdownEl.innerHTML = chips.join(" ");
+    document.querySelectorAll(".app-view-container").forEach(c => {
+      c.classList.toggle("hidden", c.id !== ("view-" + viewName));
+    });
+    if (viewName === "analytics") renderAnalytics();
+    if (viewName === "deployments") renderOperationsView();
+    if (viewName === "rules") renderRulesView();
+    if (viewName === "simulator") simulate();
+    refreshIcons();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  if (window.lucide) lucide.createIcons();
-}
+  /* ======================================================================
+   * UI Rendering (Ribbon, Alert Banner, Queue, Views)
+   * ==================================================================== */
+  function renderAll() {
+    const { results, byRisk, rank } = assessAll();
+    renderKpis(results);
+    renderHazardBanner(results);
+    renderQueue(results, rank);
+    renderDispatchLogUI();
+    if (currentView === "analytics") renderAnalytics();
+    if (currentView === "deployments") renderOperationsView();
+    if (currentView === "rules") renderRulesView();
+    refreshIcons();
+  }
 
-/* ==========================================================================
-   Photo Processing & Vision Telemetry Integration
-   ========================================================================== */
+  function renderKpis(results) {
+    const n = results.length;
+    const criticalCount = results.filter(r => r.totalScore < 50.0).length;
+    const dispatchedCount = buildings.filter(b => b.dispatchStatus === "DISPATCHED").length;
+    const avgScore = n ? (results.reduce((s, r) => s + r.totalScore, 0) / n).toFixed(1) : "0.0";
+    const compRate = n ? Math.round((buildings.filter(b => b.codeCompliant).length / n) * 100) + "%" : "0%";
 
-async function processBuildingPhoto(fileOrUrl) {
-  try {
-    let base64;
-    if (typeof fileOrUrl === "string") {
-      base64 = fileOrUrl;
+    // Top ribbon KPIs
+    if ($("kpiTotal")) $("kpiTotal").textContent = n.toLocaleString();
+    if ($("kpiFlagged")) $("kpiFlagged").textContent = criticalCount.toLocaleString();
+    if ($("kpiDispatched")) $("kpiDispatched").textContent = dispatchedCount.toLocaleString();
+    if ($("kpiPendingDispatch")) $("kpiPendingDispatch").textContent = `(${criticalCount} critical)`;
+    if ($("kpiAvg")) $("kpiAvg").textContent = avgScore;
+    if ($("kpiComp")) $("kpiComp").textContent = compRate;
+    if ($("headerDispatchCount")) $("headerDispatchCount").textContent = dispatchedCount;
+
+    // Sidebar KPIs (The 2nd Image in Left Sidebar!)
+    if ($("sidebarKpiTotal")) $("sidebarKpiTotal").textContent = n.toLocaleString();
+    if ($("sidebarKpiFlagged")) $("sidebarKpiFlagged").textContent = criticalCount.toLocaleString();
+    if ($("sidebarKpiDispatched")) $("sidebarKpiDispatched").textContent = dispatchedCount.toLocaleString();
+    if ($("sidebarKpiPendingDispatch")) $("sidebarKpiPendingDispatch").textContent = `(${criticalCount} critical)`;
+    if ($("sidebarKpiAvg")) $("sidebarKpiAvg").textContent = avgScore;
+    if ($("sidebarKpiComp")) $("sidebarKpiComp").textContent = compRate;
+
+    // Badges in Top Nav and Sidebar Nav
+    if ($("navQueueBadge")) $("navQueueBadge").textContent = n.toLocaleString();
+    if ($("sidebarNavQueueBadge")) $("sidebarNavQueueBadge").textContent = n.toLocaleString();
+    if ($("navDispatchBadge")) $("navDispatchBadge").textContent = dispatchedCount.toLocaleString();
+    if ($("sidebarNavDispatchBadge")) $("sidebarNavDispatchBadge").textContent = dispatchedCount.toLocaleString();
+  }
+
+  function renderHazardBanner(results) {
+    const criticals = results.filter(r => r.totalScore < 50.0);
+    const count = criticals.length;
+    $("criticalCountBadge").textContent = `🚩 ${count} Red Flagged`;
+    $("batchCountBadge").textContent = count;
+    
+    if (count > 0) {
+      $("dispatchSummaryText").textContent = `${count} structures exhibit critical failure or severe distress conditions (score < 50) requiring on-site officer dispatch.`;
+      $("btnBatchDispatch").classList.remove("hidden");
     } else {
-      const val = validateImageFile(fileOrUrl);
-      if (!val.valid) {
-        showToast(val.message);
-        return;
+      $("dispatchSummaryText").textContent = `All monitored structures currently meet standard structural stability thresholds (score ≥ 50).`;
+      $("btnBatchDispatch").classList.add("hidden");
+    }
+  }
+
+  function renderQueue(results, rank) {
+    let list = results.slice();
+    if (filter === "critical") list = list.filter(r => r.totalScore < 50.0);
+    else if (filter === "high") list = list.filter(r => r.totalScore < 50.0);
+    else if (filter === "medium") list = list.filter(r => r.totalScore >= 50.0 && r.totalScore < 75.0);
+    else if (filter === "low") list = list.filter(r => r.totalScore >= 75.0);
+    else if (filter === "dispatched") list = list.filter(r => r.building.dispatchStatus === "DISPATCHED");
+
+    const q = query.trim().toLowerCase();
+    if (q) {
+      list = list.filter(r => {
+        const b = r.building;
+        return [b.name, b.buildingId, b.address, b.primaryMaterial, b.occupancyType].join(" ").toLowerCase().includes(q);
+      });
+    }
+
+    // Sort results
+    if (sortKey === "age") list.sort((a, b) => b.building.ageYears - a.building.ageYears);
+    else if (sortKey === "audit") list.sort((a, b) => b.building.lastInspectionYearsAgo - a.building.lastInspectionYearsAgo);
+    else if (sortKey === "name") list.sort((a, b) => a.building.name.localeCompare(b.building.name));
+    else list.sort((a, b) => rank.get(a.building.buildingId) - rank.get(b.building.buildingId));
+
+    $("queueCounterBadge").textContent = list.length.toLocaleString() + " Structures";
+    const empty = $("queueEmpty"), wrap = $("tablePagination");
+    if (!list.length) {
+      empty.classList.remove("hidden");
+      if (wrap) wrap.classList.add("hidden");
+      $("queueBody").innerHTML = "";
+      return;
+    }
+    empty.classList.add("hidden");
+    if (wrap) wrap.classList.remove("hidden");
+
+    // Pagination
+    const totalPages = Math.ceil(list.length / pageSize) || 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const startIdx = (currentPage - 1) * pageSize;
+    const endIdx = Math.min(startIdx + pageSize, list.length);
+    const paged = list.slice(startIdx, endIdx);
+
+    $("pageInfoText").textContent = `Showing ${startIdx + 1}-${endIdx} of ${list.length.toLocaleString()} structures`;
+    $("pageNumberBadge").textContent = `Page ${currentPage} of ${totalPages}`;
+    $("btnPrevPage").disabled = currentPage <= 1;
+    $("btnNextPage").disabled = currentPage >= totalPages;
+
+    const ALL_PHOTO_CATALOG = [
+      "images/aging_concrete_school.jpg", "images/azure_bay_apartments.jpg", "images/brick_elementary_school.jpg",
+      "images/brick_library_facade.jpg", "images/commercial_steel_complex.jpg", "images/concrete_hospital_clinic.jpg",
+      "images/cracked_brick_warehouse.jpg", "images/distressed_concrete_cityhall.jpg", "images/distressed_concrete_facade.jpg",
+      "images/glass_commercial_shopping_mall.jpg", "images/glass_curtain_office.jpg", "images/heritage_timber_hall.jpg",
+      "images/hospital_annex_concrete.jpg", "images/industrial_foundry_factory.jpg", "images/modern_glass_steel_tower.jpg",
+      "images/modern_steel_tower.jpg", "images/modern_timber_community_hall.jpg", "images/residential_apartment_complex.jpg",
+      "images/sunrise_commercial_plaza.jpg", "images/urban_brick_apartments.jpg", "images/weathered_brick_academy_hall.jpg",
+      "images/weathered_school_block.jpg", "images/wooden_heritage_lodge.jpg"
+    ];
+
+    let lastRenderedPhoto = "";
+
+    $("queueBody").innerHTML = paged.map((r, rowIdx) => {
+      const b = r.building;
+      const isCritical = r.totalScore < 50.0;
+      const isDispatched = b.dispatchStatus === "DISPATCHED";
+
+      // Anti-Collision Guarantee: Never show the same photo in adjacent rows
+      let photoSrc = b.photoDataUrl;
+      if (photoSrc && photoSrc === lastRenderedPhoto) {
+        const altPool = ALL_PHOTO_CATALOG.filter(p => p !== lastRenderedPhoto);
+        photoSrc = altPool[(rowIdx * 5 + 3) % altPool.length];
       }
-      base64 = await readFileAsBase64(fileOrUrl);
-    }
+      if (photoSrc) lastRenderedPhoto = photoSrc;
 
-    currentPhotoBase64 = base64;
-    $("uploadPlaceholder").classList.add("hidden");
-    $("previewContainer").classList.remove("hidden");
+      const thumb = photoSrc
+        ? '<button type="button" data-action="photo" data-id="' + esc(b.buildingId) + '" class="h-12 w-16 shrink-0 overflow-hidden rounded-xl border border-slate-700/80 bg-slate-900 shadow-sm hover:ring-2 hover:ring-sky-400 transition" aria-label="View photo"><img src="' + esc(photoSrc) + '" alt="" class="h-full w-full object-cover" onerror="this.style.display=\'none\'; if(this.nextElementSibling)this.nextElementSibling.style.display=\'flex\';"><div class="hidden h-full w-full items-center justify-center bg-slate-800 text-slate-400"><i data-lucide="building-2" class="h-5 w-5"></i></div></button>'
+        : '<div class="flex h-12 w-16 shrink-0 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800 text-slate-500 shadow-sm"><i data-lucide="building-2" class="h-5 w-5"></i></div>';
 
-    // Animate scanning radar
-    $("scannerLaser").classList.remove("hidden");
-    $("aiStatusBadge").textContent = "Inspecting...";
-    $("aiStatusBadge").className = "bg-amber-100 text-amber-800 border border-amber-300 text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold animate-pulse";
-
-    // Run inspection engine
-    const canvas = $("photoCanvas");
-    const vision = await visionEngine.inspectPhoto(base64, canvas);
-    currentVisionResult = vision;
-
-    // Conclude scanner animation
-    $("scannerLaser").classList.add("hidden");
-    $("aiStatusBadge").textContent = "Photo Loaded";
-    $("aiStatusBadge").className = "bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold";
-
-    // Auto-fill form fields accurately from AI telemetry
-    if (vision.primaryMaterial && $("fMat")) $("fMat").value = vision.primaryMaterial;
-    if (vision.floors && $("fFloors")) $("fFloors").value = vision.floors;
-    if (vision.estimatedAgeYears && $("fAge")) $("fAge").value = vision.estimatedAgeYears;
-    if (vision.maintenanceScore !== undefined && $("fMaint")) {
-      $("fMaint").value = vision.maintenanceScore;
-      $("fMaintVal").textContent = vision.maintenanceScore;
-    }
-    if (vision.codeCompliant !== undefined && $("fComp")) {
-      $("fComp").checked = vision.codeCompliant;
-    } else if ($("fComp")) {
-      $("fComp").checked = (vision.maintenanceScore >= 7);
-    }
-    if (vision.occupancyType && $("fOcc")) $("fOcc").value = vision.occupancyType;
-    if (vision.name && (!editingBuildingId || $("fName").value === "Simulated Structure" || !$("fName").value)) {
-      $("fName").value = vision.name;
-    }
-
-    // Populate Rich Telemetry Panel
-    const telemetryPanel = $("visionTelemetryPanel");
-    if (telemetryPanel) {
-      telemetryPanel.classList.remove("hidden");
-
-      if ($("viBuildingName")) $("viBuildingName").textContent = vision.name || "Building Elevation";
-      if ($("viTypology")) $("viTypology").textContent = vision.buildingTypology || "Typology Analysis";
-      if ($("viMaterial")) $("viMaterial").textContent = vision.primaryMaterial || "RCC";
-      if ($("viFloors")) $("viFloors").textContent = `${vision.floors || 1} Floors`;
-      if ($("viAge")) $("viAge").textContent = `~${vision.estimatedAgeYears || 20} Yrs`;
-
-      if ($("visionConfidenceBadge")) {
-        $("visionConfidenceBadge").innerHTML = "Telemetry Calibrated";
-      }
-
-      // Distress Analysis alert
-      const distressTitle = $("viDistressTitle");
-      const distressDesc = $("viDistressDesc");
-      const distressBox = $("viDistressAlert");
-      const crackSev = vision.crackSeverity || "none";
-
-      if (crackSev === "critical") {
-        if (distressBox) distressBox.className = "p-2.5 rounded-lg bg-red-950/60 border border-red-500/80 text-[11px] flex items-start gap-2";
-        if (distressTitle) {
-          distressTitle.className = "font-bold text-red-300 font-heading";
-          distressTitle.textContent = "🚨 Severe Structural Cracking Detected";
-        }
-        if (distressDesc) distressDesc.textContent = "Widespread diagonal fracture network observed along load-bearing components. Immediate municipal intervention required.";
-      } else if (crackSev === "moderate") {
-        if (distressBox) distressBox.className = "p-2.5 rounded-lg bg-amber-950/60 border border-amber-500/80 text-[11px] flex items-start gap-2";
-        if (distressTitle) {
-          distressTitle.className = "font-bold text-amber-300 font-heading";
-          distressTitle.textContent = "⚠️ Moderate Facade Spalling & Distress";
-        }
-        if (distressDesc) distressDesc.textContent = "Visible surface delamination and rebar oxidation staining. NDT verification recommended.";
+      // Strict User Rule: >75 safe, 50-75 medium, <50 critical red flag
+      let conditionBadge;
+      if (r.totalScore >= 75.0) {
+        conditionBadge = '<span class="status-badge-safe inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i> SAFE / SOUND</span>';
+      } else if (r.totalScore >= 50.0) {
+        conditionBadge = '<span class="status-badge-medium inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold"><i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> MEDIUM RISK</span>';
       } else {
-        if (distressBox) distressBox.className = "p-2.5 rounded-lg bg-emerald-950/60 border border-emerald-500/80 text-[11px] flex items-start gap-2";
-        if (distressTitle) {
-          distressTitle.className = "font-bold text-emerald-300 font-heading";
-          distressTitle.textContent = "✅ Sound External Envelope";
-        }
-        if (distressDesc) distressDesc.textContent = "No critical shear fractures or concrete spalling detected on facade surface.";
+        conditionBadge = '<span class="status-badge-critical red-flag-badge font-bold"><i data-lucide="flag" class="w-3.5 h-3.5 inline"></i> 🚩 CRITICAL HAZARD</span>';
       }
 
-      // Architectural items tagged in image
-      const detectedItemsList = $("viDetectedItems");
-      if (detectedItemsList) {
-        const items = vision.detectedItems || [];
-        if (items.length > 0) {
-          detectedItemsList.innerHTML = items.map(item =>
-            `<span class="bg-slate-800 border border-slate-700 text-sky-200 text-[10px] px-2 py-0.5 rounded font-medium">${escapeHtml(item)}</span>`
-          ).join("");
-        } else {
-          detectedItemsList.innerHTML = `<span class="text-slate-400 text-[10px]">No anomalies tagged</span>`;
-        }
+      // Officer Dispatch CTA button or Dispatched badge
+      const dispatchAction = isDispatched
+        ? '<div class="flex flex-col gap-0.5"><span class="dispatched-status-tag" title="Field Officers Mobilized"><i data-lucide="shield-check" class="w-3.5 h-3.5 text-indigo-400"></i> Dispatched</span>' +
+          (b.dispatchDetails && b.dispatchDetails.squad ? '<span class="text-[9px] text-indigo-300 font-mono truncate max-w-[130px] font-semibold">' + esc(b.dispatchDetails.squad.split("—")[0].trim()) + '</span>' : '') + '</div>'
+        : (isCritical
+          ? '<button type="button" data-action="dispatch" data-id="' + esc(b.buildingId) + '" class="btn-lift flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-700 hover:bg-rose-600 text-white shadow-sm border border-rose-500/50 transition"><i data-lucide="siren" class="w-3.5 h-3.5 text-white"></i> <span>Send Officers</span></button>'
+          : '<button type="button" data-action="dispatch" data-id="' + esc(b.buildingId) + '" class="btn-lift btn-glow-sky flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition"><i data-lucide="send" class="w-3.5 h-3.5 text-sky-400"></i> <span>Dispatch</span></button>');
+
+      // Score display with clear Grade tag & colored progress meter
+      let scoreHtml;
+      if (r.totalScore < 50.0) {
+        scoreHtml = '<div class="flex items-baseline gap-1.5"><span class="font-mono text-base font-black text-rose-500">' + r.totalScore.toFixed(1) + '</span><span class="text-[9px] font-mono px-1.5 py-0.2 rounded font-black bg-rose-500/20 text-rose-400 border border-rose-500/40">GRADE ' + r.grade + '</span></div>' +
+          '<div class="mt-1 h-2 w-20 overflow-hidden rounded-full bg-slate-800 border border-slate-700/60"><div class="h-full rounded-full bg-rose-600 shadow-sm" style="width:' + Math.max(6, r.totalScore) + '%"></div></div>';
+      } else if (r.totalScore < 75.0) {
+        scoreHtml = '<div class="flex items-baseline gap-1.5"><span class="font-mono text-base font-black text-amber-400">' + r.totalScore.toFixed(1) + '</span><span class="text-[9px] font-mono px-1.5 py-0.2 rounded font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">GRADE ' + r.grade + '</span></div>' +
+          '<div class="mt-1 h-2 w-20 overflow-hidden rounded-full bg-slate-800 border border-slate-700/60"><div class="h-full rounded-full bg-amber-500 shadow-sm" style="width:' + r.totalScore + '%"></div></div>';
+      } else {
+        scoreHtml = '<div class="flex items-baseline gap-1.5"><span class="font-mono text-base font-black text-emerald-400">' + r.totalScore.toFixed(1) + '</span><span class="text-[9px] font-mono px-1.5 py-0.2 rounded font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">GRADE ' + r.grade + '</span></div>' +
+          '<div class="mt-1 h-2 w-20 overflow-hidden rounded-full bg-slate-800 border border-slate-700/60"><div class="h-full rounded-full bg-emerald-500 shadow-sm" style="width:' + r.totalScore + '%"></div></div>';
       }
+
+      return '<tr class="transition-colors hover:bg-slate-800/60 ' + (isCritical ? 'critical-hazard-row' : '') + '" data-row="' + esc(b.buildingId) + '">' +
+        '<td class="px-4 py-3.5 font-mono text-xs font-bold ' + (isCritical ? 'text-rose-400' : 'text-slate-500') + '">#' + rank.get(b.buildingId) + '</td>' +
+        '<td class="px-4 py-3.5"><div class="flex items-center gap-3">' + thumb +
+        '<div class="min-w-0"><div class="flex items-center gap-2 flex-wrap"><p class="truncate font-bold text-white font-heading text-sm">' + esc(b.name) + '</p>' +
+        '<span class="font-mono text-[10px] bg-sky-500/10 text-sky-400 border border-sky-500/30 px-1.5 py-0.2 rounded font-bold">' + esc(b.buildingId) + '</span></div>' +
+        '<p class="truncate text-xs text-slate-400 mt-0.5">' + esc(b.address) + '</p>' +
+        '<div class="mt-1.5 flex items-center gap-1.5 flex-wrap text-[10px]">' +
+        '<span class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-semibold border border-slate-700/60">' + esc(b.primaryMaterial) + '</span>' +
+        '<span class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-medium border border-slate-700/60">' + b.floors + ' fl</span>' +
+        '<span class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-medium border border-slate-700/60">' + b.ageYears + ' yrs</span>' +
+        '<span class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-medium border border-slate-700/60">' + esc(b.occupancyType) + '</span>' +
+        '</div></div></div></td>' +
+        '<td class="px-4 py-3.5">' + scoreHtml + '</td>' +
+        '<td class="px-4 py-3.5"><div class="space-y-1">' + conditionBadge + '<p class="text-[10px] text-slate-400 font-mono flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3 text-slate-500"></i>' + dueText(r) + '</p></div></td>' +
+        '<td class="px-4 py-3.5">' + dispatchAction + '</td>' +
+        '<td class="px-4 py-3.5"><div class="flex justify-end gap-1">' +
+        '<button type="button" data-action="audit" data-id="' + esc(b.buildingId) + '" class="row-btn text-slate-400 hover:text-sky-400 hover:bg-slate-800" title="View Audit Report & Print Notice"><i data-lucide="file-search" class="h-4 w-4"></i></button>' +
+        '<button type="button" data-action="edit" data-id="' + esc(b.buildingId) + '" class="row-btn text-slate-400 hover:text-amber-400 hover:bg-slate-800" title="Edit in Live Assessment Studio"><i data-lucide="pencil" class="h-4 w-4"></i></button>' +
+        '<button type="button" data-action="scan" data-id="' + esc(b.buildingId) + '" class="row-btn text-slate-400 hover:text-sky-400 hover:bg-slate-800" title="Inspect Elevation in Vision Lab"><i data-lucide="camera" class="h-4 w-4"></i></button>' +
+        '<button type="button" data-action="delete" data-id="' + esc(b.buildingId) + '" class="row-btn text-slate-400 hover:text-red-400 hover:bg-slate-800" title="Delete Structure"><i data-lucide="trash-2" class="h-4 w-4"></i></button>' +
+        '</div></td></tr>';
+    }).join("");
+  }
+
+  /* ======================================================================
+   * Dedicated View Renderers (Analytics, Operations, Rules)
+   * ==================================================================== */
+  function renderAnalytics() {
+    const { results } = assessAll();
+    const total = results.length;
+    if (!total) return;
+
+    const criticals = results.filter(r => r.totalScore < 50.0);
+    const mediums = results.filter(r => r.totalScore >= 50.0 && r.totalScore < 75.0);
+    const safes = results.filter(r => r.totalScore >= 75.0);
+    const overdue = buildings.filter(b => b.lastInspectionYearsAgo >= 5);
+    const compliant = buildings.filter(b => b.codeCompliant);
+
+    const avgScore = results.reduce((s, r) => s + r.totalScore, 0) / total;
+    const critPct = (criticals.length / total) * 100;
+    const medPct = (mediums.length / total) * 100;
+    const safePct = (safes.length / total) * 100;
+    const overduePct = (overdue.length / total) * 100;
+    const compPct = (compliant.length / total) * 100;
+
+    if ($("analyticsCriticalPct")) $("analyticsCriticalPct").textContent = critPct.toFixed(1) + "%";
+    if ($("analyticsAvgScore")) $("analyticsAvgScore").textContent = avgScore.toFixed(1);
+    if ($("analyticsOverduePct")) $("analyticsOverduePct").textContent = overduePct.toFixed(1) + "%";
+    if ($("analyticsCompliancePct")) $("analyticsCompliancePct").textContent = Math.round(compPct) + "%";
+
+    const rb = $("analyticsRiskBands");
+    if (rb) {
+      rb.innerHTML = `
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-xs font-semibold">
+            <span class="text-rose-400 flex items-center gap-1.5 font-heading"><i data-lucide="flag" class="w-3.5 h-3.5"></i> Critical Hazard (&lt;50.0)</span>
+            <span class="font-mono text-white font-bold">${criticals.length.toLocaleString()} structures (${critPct.toFixed(1)}%)</span>
+          </div>
+          <div class="h-2.5 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+            <div class="h-full bg-rose-600 rounded-full" style="width: ${critPct}%"></div>
+          </div>
+        </div>
+        <div class="space-y-1.5 pt-1">
+          <div class="flex justify-between text-xs font-semibold">
+            <span class="text-amber-400 flex items-center gap-1.5 font-heading"><i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> Medium Risk (50.0–74.9)</span>
+            <span class="font-mono text-white font-bold">${mediums.length.toLocaleString()} structures (${medPct.toFixed(1)}%)</span>
+          </div>
+          <div class="h-2.5 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+            <div class="h-full bg-amber-500 rounded-full" style="width: ${medPct}%"></div>
+          </div>
+        </div>
+        <div class="space-y-1.5 pt-1">
+          <div class="flex justify-between text-xs font-semibold">
+            <span class="text-emerald-400 flex items-center gap-1.5 font-heading"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i> Safe & Sound (≥75.0)</span>
+            <span class="font-mono text-white font-bold">${safes.length.toLocaleString()} structures (${safePct.toFixed(1)}%)</span>
+          </div>
+          <div class="h-2.5 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+            <div class="h-full bg-emerald-500 rounded-full" style="width: ${safePct}%"></div>
+          </div>
+        </div>
+      `;
     }
 
-    if (window.lucide) lucide.createIcons();
-    updateLiveSimulator();
-    showToast("Photo analyzed! Assessment parameters auto-calibrated.");
-  } catch (err) {
-    console.error("Photo inspection failed:", err);
-    $("scannerLaser").classList.add("hidden");
-    $("aiStatusBadge").textContent = "Ready";
-    $("aiStatusBadge").className = "bg-slate-200 text-slate-700 text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold";
-    showToast("Could not process photo: " + (err.message || "Unknown error"));
-  }
-}
+    const mm = $("analyticsMaterialMatrix");
+    if (mm) {
+      const materials = ["RCC", "Brick", "Steel", "Wood", "Mixed", "Other"];
+      const matData = materials.map(m => {
+        const matching = results.filter(r => r.building.primaryMaterial === m);
+        const count = matching.length;
+        const avg = count ? (matching.reduce((s, r) => s + r.totalScore, 0) / count).toFixed(1) : "0.0";
+        const crit = count ? Math.round((matching.filter(r => r.totalScore < 50).length / count) * 100) : 0;
+        return { name: m, count, avg, crit };
+      }).filter(x => x.count > 0);
 
-function readFileAsBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = e => resolve(e.target.result);
-    reader.onerror = e => reject(e);
-    reader.readAsDataURL(file);
-  });
-}
-
-function clearUploadedPhoto() {
-  currentPhotoBase64 = null;
-  currentVisionResult = null;
-  $("previewContainer").classList.add("hidden");
-  $("uploadPlaceholder").classList.remove("hidden");
-  if ($("visionTelemetryPanel")) $("visionTelemetryPanel").classList.add("hidden");
-  $("photoInput").value = "";
-  $("aiStatusBadge").textContent = "Ready";
-  $("aiStatusBadge").className = "bg-sky-100 text-sky-800 border border-sky-200 text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold";
-  updateLiveSimulator();
-}
-
-/* ==========================================================================
-   Webcam Integration
-   ========================================================================== */
-
-async function startWebcam() {
-  const modal = $("webcamModal");
-  const video = $("webcamVideo");
-  modal.classList.remove("hidden");
-  modal.classList.add("flex");
-
-  try {
-    webcamStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
-    });
-    video.srcObject = webcamStream;
-  } catch (err) {
-    console.warn("Webcam stream access failed, using native mobile camera fallback:", err);
-    closeWebcam();
-    const nativeCam = $("cameraInput");
-    if (nativeCam) {
-      nativeCam.click();
-    } else {
-      showToast("Camera access was blocked or is unavailable: " + (err.message || "Permission denied"));
+      mm.innerHTML = matData.map(m => `
+        <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3 text-xs">
+          <div class="min-w-0">
+            <span class="font-bold text-white font-heading text-sm">${m.name}</span>
+            <span class="text-slate-400 text-[11px] block mt-0.5">${m.count.toLocaleString()} buildings &bull; ${m.crit}% critical hazard share</span>
+          </div>
+          <div class="text-right shrink-0">
+            <span class="font-mono font-bold text-white text-base">${m.avg}</span>
+            <span class="text-[10px] text-slate-400 block font-mono">avg score</span>
+          </div>
+        </div>
+      `).join("");
     }
   }
-}
 
-function captureWebcamPhoto() {
-  const video = $("webcamVideo");
-  const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth || 640;
-  canvas.height = video.videoHeight || 480;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
-  closeWebcam();
-  processBuildingPhoto(dataUrl);
-}
+  function renderOperationsView() {
+    const list = $("dispatchLogList");
+    const empty = $("dispatchLogEmpty");
+    const countBadge = $("operationsCountBadge");
+    if (countBadge) countBadge.textContent = `${dispatches.length} Active Missions`;
 
-function closeWebcam() {
-  if (webcamStream) {
-    webcamStream.getTracks().forEach(t => t.stop());
-    webcamStream = null;
-  }
-  $("webcamModal").classList.add("hidden");
-  $("webcamModal").classList.remove("flex");
-}
-
-/* ==========================================================================
-   Form Submission & Editing
-   ========================================================================== */
-
-function handleFormSubmit() {
-  hideFormError();
-
-  let rawId = ($("fId").value || "").trim();
-  let rawName = ($("fName").value || "").trim();
-  let rawAddr = ($("fAddr").value || "").trim();
-  let age = parseInt($("fAge").value, 10);
-  let floors = parseInt($("fFloors").value, 10);
-  let insp = parseInt($("fInsp").value, 10);
-
-  // Auto-generate Building ID if user left it blank
-  if (!rawId) {
-    const existingIds = new Set(buildingStore.map(b => b.buildingId.toUpperCase()));
-    let candidateNum = buildingStore.length + 101;
-    while (existingIds.has(`B-${candidateNum}`)) {
-      candidateNum++;
+    if (!dispatches.length) {
+      if (empty) empty.classList.remove("hidden");
+      if (list) list.innerHTML = "";
+      return;
     }
-    rawId = `B-${candidateNum}`;
-    $("fId").value = rawId;
-  }
+    if (empty) empty.classList.add("hidden");
 
-  // Clean and validate ID
-  const id = rawId.replace(/[^a-zA-Z0-9\-_]/g, "").substring(0, 30) || `B-${Date.now().toString().slice(-4)}`;
-
-  // Default Name if blank
-  if (!rawName) {
-    rawName = currentVisionResult?.name || `${$("fMat").value} ${$("fOcc").value} Structure`;
-    $("fName").value = rawName;
-  }
-  const name = rawName.substring(0, 100);
-
-  // Default Address if blank
-  if (!rawAddr) {
-    const wardNum = Math.floor(1 + Math.random() * 12);
-    rawAddr = `Ward ${wardNum} Municipal District, Sector ${Math.floor(1 + Math.random() * 9)}`;
-    $("fAddr").value = rawAddr;
-  }
-  const addr = rawAddr.substring(0, 150);
-
-  // Sanitize numerical fields
-  if (isNaN(age) || age < 0) age = 20;
-  if (age > 150) age = 150;
-  if (isNaN(floors) || floors < 1) floors = 1;
-  if (floors > 100) floors = 100;
-  if (isNaN(insp) || insp < 0) insp = 1;
-  if (insp > 50) insp = 50;
-
-  // Visual button feedback
-  const submitBtn = $("btnSubmitAssessment");
-  let originalBtnHtml = "";
-  if (submitBtn) {
-    originalBtnHtml = submitBtn.innerHTML;
-    submitBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4 text-emerald-400"></i><span>Adding &amp; Prioritizing...</span>';
-    submitBtn.classList.add("bg-emerald-800");
-    if (window.lucide) lucide.createIcons();
-  }
-
-  // Check if building already exists (for edit/update mode)
-  const existingIndex = buildingStore.findIndex(b => b.buildingId.toLowerCase() === id.toLowerCase());
-
-  const buildingObj = new Building({
-    buildingId: id,
-    name: name,
-    address: addr,
-    ageYears: age,
-    primaryMaterial: $("fMat").value,
-    maintenanceScore: parseInt($("fMaint").value, 10) || 7,
-    codeCompliant: $("fComp").checked,
-    lastInspectionYearsAgo: insp,
-    floors: floors,
-    occupancyType: $("fOcc").value,
-    photoDataUrl: currentPhotoBase64,
-    visionAnalysis: currentVisionResult
-  });
-
-  const assessResult = assessmentEngine.assess(buildingObj);
-
-  if (existingIndex >= 0) {
-    buildingStore[existingIndex] = buildingObj;
-    showToast(`Structure "${id}" updated! Score: ${assessResult.totalScore.toFixed(1)} (${assessResult.riskLevel} Risk)`);
-  } else {
-    buildingStore.push(buildingObj);
-    showToast(`Structure "${id}" added to queue! Score: ${assessResult.totalScore.toFixed(1)} (${assessResult.riskLevel} Risk)`);
-  }
-
-  saveStore();
-
-  // Reset activeFilter to "All" so the new structure is ALWAYS visible in the table
-  activeFilter = "All";
-  const filterTabs = $("filterTabs");
-  if (filterTabs) {
-    Array.from(filterTabs.children).forEach(c => {
-      c.className = `btn-lift px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${c.dataset.filter === 'All' ? 'tab-active' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`;
-    });
-  }
-
-  // Clear search query so new item is not filtered out
-  if ($("searchQueue")) $("searchQueue").value = "";
-  if ($("btnClearSearch")) $("btnClearSearch").classList.add("hidden");
-
-  // Re-render table and simulators
-  renderQueueTable();
-  cancelEditMode();
-  updateLiveSimulator();
-
-  // On mobile screens, automatically switch to Priority Queue tab to see new entry
-  if (window.innerWidth < 1024) {
-    switchToMobileTab("queue");
-  }
-
-  // Highlight and scroll to the new/updated row
-  setTimeout(() => {
-    const targetRow = document.querySelector(`[data-action="audit"][data-id="${id}"]`)?.closest("tr");
-    if (targetRow) {
-      targetRow.classList.add("bg-sky-100", "ring-2", "ring-sky-500", "transition-all");
-      targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
-      setTimeout(() => {
-        targetRow.classList.remove("bg-sky-100", "ring-2", "ring-sky-500");
-      }, 3000);
-    }
-    if (submitBtn && originalBtnHtml) {
-      submitBtn.innerHTML = originalBtnHtml;
-      submitBtn.classList.remove("bg-emerald-800");
-      if (window.lucide) lucide.createIcons();
-    }
-  }, 250);
-}
-
-/* ==========================================================================
-   Mobile Responsive Tab Switcher
-   ========================================================================== */
-
-function switchToMobileTab(tabName) {
-  const tabBtnForm = $("tabBtnForm");
-  const tabBtnQueue = $("tabBtnQueue");
-  const panelForm = $("panelForm");
-  const panelQueue = $("panelQueue");
-
-  if (!panelForm || !panelQueue) return;
-
-  if (tabName === "form") {
-    if (tabBtnForm) {
-      tabBtnForm.className = "flex-1 py-2.5 rounded-lg bg-slate-900 text-white shadow-xs transition flex items-center justify-center gap-1.5 font-heading";
-    }
-    if (tabBtnQueue) {
-      tabBtnQueue.className = "flex-1 py-2.5 rounded-lg text-slate-700 hover:text-slate-900 transition flex items-center justify-center gap-1.5 font-heading";
-    }
-    panelForm.classList.remove("hidden");
-    panelForm.classList.add("block");
-    panelQueue.classList.add("hidden");
-    panelQueue.classList.remove("block");
-  } else {
-    if (tabBtnQueue) {
-      tabBtnQueue.className = "flex-1 py-2.5 rounded-lg bg-slate-900 text-white shadow-xs transition flex items-center justify-center gap-1.5 font-heading";
-    }
-    if (tabBtnForm) {
-      tabBtnForm.className = "flex-1 py-2.5 rounded-lg text-slate-700 hover:text-slate-900 transition flex items-center justify-center gap-1.5 font-heading";
-    }
-    panelQueue.classList.remove("hidden");
-    panelQueue.classList.add("block");
-    panelForm.classList.add("hidden");
-    panelForm.classList.remove("block");
-  }
-  if (window.lucide) lucide.createIcons();
-}
-
-function loadBuildingIntoForm(buildingId) {
-  const building = buildingStore.find(b => b.buildingId === buildingId);
-  if (!building) return;
-
-  // On mobile screens, automatically switch to Form tab for editing
-  if (window.innerWidth < 1024) {
-    switchToMobileTab("form");
-  }
-
-  editingBuildingId = building.buildingId;
-
-  $("fId").value = building.buildingId;
-  $("fName").value = building.name;
-  $("fAddr").value = building.address;
-  $("fAge").value = building.ageYears;
-  $("fFloors").value = building.floors;
-  $("fMat").value = building.primaryMaterial;
-  $("fOcc").value = building.occupancyType;
-  $("fMaint").value = building.maintenanceScore;
-  $("fMaintVal").textContent = building.maintenanceScore;
-  $("fComp").checked = building.codeCompliant;
-  $("fInsp").value = building.lastInspectionYearsAgo;
-
-  if (building.photoDataUrl) {
-    processBuildingPhoto(building.photoDataUrl);
-  } else {
-    clearUploadedPhoto();
-  }
-
-  // Toggle edit mode UI
-  if ($("editModeIndicator")) $("editModeIndicator").classList.remove("hidden");
-  if ($("btnCancelEdit")) $("btnCancelEdit").classList.remove("hidden");
-  if ($("btnSubmitText")) $("btnSubmitText").textContent = `Save Changes to ${building.buildingId}`;
-
-  // Ensure form is visible and scrolled into view
-  const formArea = $("formContentArea");
-  if (formArea.classList.contains("hidden")) {
-    formArea.classList.remove("hidden");
-    $("formToggleChevron").style.transform = "";
-  }
-  formArea.scrollIntoView({ behavior: "smooth", block: "start" });
-
-  updateLiveSimulator();
-  showToast(`Loaded ${building.buildingId} into assessment form.`);
-}
-
-function cancelEditMode() {
-  editingBuildingId = null;
-  $("fId").value = "";
-  $("fName").value = "";
-  $("fAddr").value = "";
-  $("fAge").value = 20;
-  $("fFloors").value = 3;
-  $("fMaint").value = 7;
-  $("fMaintVal").textContent = 7;
-  $("fComp").checked = true;
-  $("fInsp").value = 2;
-  clearUploadedPhoto();
-
-  if ($("editModeIndicator")) $("editModeIndicator").classList.add("hidden");
-  if ($("btnCancelEdit")) $("btnCancelEdit").classList.add("hidden");
-  if ($("btnSubmitText")) $("btnSubmitText").textContent = "Assess & Add to Priority Queue";
-
-  hideFormError();
-}
-
-function showFormError(msg) {
-  const errBox = $("formError");
-  const errText = $("formErrorText") || errBox;
-  errText.textContent = msg;
-  errBox.classList.remove("hidden");
-  errBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-
-function hideFormError() {
-  const errBox = $("formError");
-  if (errBox) errBox.classList.add("hidden");
-}
-
-/* ==========================================================================
-   Toast Notification & Delete Record
-   ========================================================================== */
-
-let toastTimeout = null;
-function showToast(msg) {
-  const toast = $("appToast");
-  const textEl = $("toastMsgText") || toast;
-  textEl.textContent = msg;
-  toast.classList.remove("hidden");
-
-  if (toastTimeout) clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => {
-    toast.classList.add("hidden");
-  }, 3500);
-}
-
-function deleteBuilding(id) {
-  if (confirm(`Remove structure "${id}" from the municipal priority queue?`)) {
-    buildingStore = buildingStore.filter(b => b.buildingId !== id);
-    if (editingBuildingId === id) cancelEditMode();
-    saveStore();
-    renderQueueTable();
-    showToast(`Structure "${id}" removed from queue.`);
-  }
-}
-
-/* ==========================================================================
-   Audit Modal & Findings Display (XSS-Hardened)
-   ========================================================================== */
-
-function openAuditModal(id) {
-  const building = buildingStore.find(b => b.buildingId === id);
-  if (!building) return;
-
-  const result = assessmentEngine.assess(building);
-  const modal = $("auditModal");
-  const modalContent = $("auditModalContent");
-
-  const safeThumb = sanitizeImageUrl(building.photoDataUrl) || createFacadeSvg(building.primaryMaterial, "#475569", building.floors);
-
-  // Findings list
-  const findingsHtml = result.findings.length > 0
-    ? result.findings.map(f => {
-        const borderCol = f.severity === 'danger' ? 'border-red-300 bg-red-50/60' : f.severity === 'warning' ? 'border-amber-300 bg-amber-50/60' : 'border-slate-200 bg-slate-50';
-        const badgeCol = f.severity === 'danger' ? 'bg-red-600 text-white' : f.severity === 'warning' ? 'bg-amber-600 text-white' : 'bg-slate-600 text-white';
+    if (list) {
+      list.innerHTML = dispatches.slice().reverse().map(d => {
+        const b = buildings.find(x => x.buildingId === d.buildingId);
+        const bName = b ? b.name : "Target Site";
+        const bScore = b ? engine.assess(b).totalScore.toFixed(1) : "N/A";
         return `
-          <div class="border ${borderCol} rounded-xl p-3 flex items-start justify-between gap-3">
-            <div>
-              <div class="flex items-center gap-2 mb-1">
-                <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${badgeCol}">${escapeHtml(f.category)}</span>
-                <span class="text-xs font-bold text-slate-800 font-heading">${escapeHtml(f.ruleName)}</span>
+          <div class="rounded-2xl border border-indigo-500/30 bg-slate-950 p-4 space-y-2.5 shadow-md">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <span class="font-bold text-sm text-white font-heading">${esc(bName)}</span>
+                <span class="font-mono text-xs text-sky-400 font-bold ml-1.5">[${esc(d.buildingId)}]</span>
+                <span class="text-xs text-slate-400 block mt-0.5">${esc(d.address || (b ? b.address : ""))}</span>
               </div>
-              <p class="text-xs text-slate-600 leading-relaxed">${escapeHtml(f.description)}</p>
+              <div class="flex items-center gap-1.5">
+                <span class="red-flag-badge">Score: ${bScore}</span>
+                <span class="dispatched-status-tag"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i> ACTIVE MISSION</span>
+              </div>
             </div>
-            <div class="text-right flex-shrink-0">
-              <span class="text-xs font-black text-red-600 font-mono">-${f.deduction.toFixed(1)} pts</span>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-800">
+              <div>
+                <span class="text-[10px] text-slate-400 font-mono block">Squad Assignment:</span>
+                <span class="font-semibold text-indigo-300">${esc(d.squad)}</span>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-400 font-mono block">Priority &amp; Statutory SLA:</span>
+                <span class="font-semibold text-rose-400">${esc(d.priority)}</span>
+              </div>
+            </div>
+            ${d.instructions ? `<p class="text-xs text-slate-300 bg-slate-900/90 p-3 rounded-xl border border-slate-800 leading-relaxed font-medium"><strong>Directives:</strong> ${esc(d.instructions)}</p>` : ''}
+            <div class="flex items-center justify-between text-xs text-slate-400 font-mono pt-1">
+              <span>Dispatched: ${esc(d.timestamp)}</span>
+              <button type="button" data-action="audit" data-id="${esc(d.buildingId)}" class="text-sky-400 hover:underline font-bold">View Audit Findings &rarr;</button>
             </div>
           </div>
         `;
-      }).join("")
-    : `<div class="p-4 text-center text-emerald-700 bg-emerald-50 rounded-xl border border-emerald-200 text-xs font-semibold">Zero deductions logged. Structure complies with all inspection benchmarks.</div>`;
+      }).join("");
+    }
+  }
 
-  const recommendationsHtml = result.recommendedActions.map(act => `
-    <li class="flex items-start gap-2 text-xs text-slate-700 leading-relaxed">
-      <i data-lucide="arrow-right-circle" class="w-4 h-4 text-sky-600 flex-shrink-0 mt-0.5"></i>
-      <span>${escapeHtml(act)}</span>
-    </li>
-  `).join("");
+  function renderRulesView() {
+    const grid = $("strategyRulesCatalogGrid");
+    if (!grid) return;
+    const catalog = [
+      { rule: "AgeRule", category: "Lifespan & Fatigue", desc: "Evaluates material carbonation, aggregate relaxation, and lime mortar leaching as buildings age.", items: [["60+ years", 25], ["40-59 years", 18], ["25-39 years", 10], ["15-24 years", 5], ["Under 15 years", 0]] },
+      { rule: "MaterialRule", category: "Material Integrity", desc: "Assesses inherent ductility, fire resistance, and dry rot vulnerability based on structural composition.", items: [["Wood / Timber", 18], ["Non-standard", 15], ["Brick Masonry", 12], ["Mixed / Composite", 10], ["Steel", 3], ["RCC (baseline)", 0]] },
+      { rule: "MaintenanceRule", category: "Physical Upkeep", desc: "Deducts score for deferred maintenance, spalling, and unaddressed distress (1–10 engineering rating).", items: [["Rating 1-2 (Severe)", 25], ["Rating 3-4 (Substandard)", 18], ["Rating 5-6 (Average)", 10], ["Rating 7-8 (Good)", 4], ["Rating 9-10 (Pristine)", 0]] },
+      { rule: "CodeComplianceRule", category: "Statutory Standards", desc: "Penalizes failure to comply with NBC seismic zoning regulations and statutory fire codes.", items: [["Non-Compliant with NBC seismic codes", 20], ["Verified Compliant", 0]] },
+      { rule: "InspectionRecencyRule", category: "Audit Monitoring", desc: "Flags overdue statutory structural audit intervals exceeding mandatory 3-to-5 year thresholds.", items: [["10+ years overdue", 15], ["7-9 years overdue", 10], ["5-6 years overdue", 5], ["Under 5 years", 0]] },
+      { rule: "HeightOccupancyRule", category: "Consequence Exposure", desc: "Evaluates lateral load risk and consequence factors for hospitals, schools, and high-rise structures.", items: [["10+ floors (High-rise)", 8], ["5-9 floors (Mid-rise)", 4], ["High consequence (Hospital, School, Public)", 7], ["Commercial / Mixed", 3], ["Residential", 0]] },
+      { rule: "VisualDistressRule", category: "Computer Vision Telemetry", desc: "Incorporates computer-vision-detected facade fractures, diagonal shear cracks, and cover spalling.", items: [["Critical crack fracture", 10], ["Moderate surface distress", 6], ["Minor cosmetic lines", 2], ["Sound surface", 0]] }
+    ];
 
-  modalContent.innerHTML = `
-    <!-- Modal Header Info -->
-    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
-      <div class="flex items-center gap-4">
-        <div class="w-20 h-24 rounded-xl overflow-hidden border border-slate-300 shadow-xs flex-shrink-0 bg-slate-100">
-          <img src="${safeThumb}" alt="Building" class="w-full h-full object-cover">
-        </div>
+    grid.innerHTML = catalog.map(c => `
+      <div class="rule-catalog-card rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between">
         <div>
-          <div class="flex items-center gap-2">
-            <h3 class="text-lg font-bold text-slate-900 font-heading">${escapeHtml(building.name)}</h3>
-            <span class="text-xs font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200 font-bold">${escapeHtml(building.buildingId)}</span>
+          <div class="rule-catalog-header px-4 py-3.5 border-b border-slate-800">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-sm text-white font-heading">${esc(c.rule)}</span>
+              <span class="text-[10px] font-mono font-bold text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-400/30">${esc(c.category)}</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1.5 leading-relaxed">${esc(c.desc)}</p>
           </div>
-          <p class="text-xs text-slate-500 mt-0.5"><i data-lucide="map-pin" class="w-3.5 h-3.5 inline"></i> ${escapeHtml(building.address)}</p>
-          <div class="mt-2 flex flex-wrap gap-1.5">
-            ${result.requiresUrgentInspection
-              ? '<span class="inline-flex items-center gap-1 bg-red-600 text-white text-xs font-bold px-2.5 py-0.5 rounded-full shadow-xs"><i data-lucide="siren" class="w-3.5 h-3.5"></i> URGENT INSPECTION REQUIRED</span>'
-              : '<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-0.5 rounded-full"><i data-lucide="check" class="w-3.5 h-3.5"></i> Scheduled Monitoring</span>'}
-            ${building.codeCompliant
-              ? '<span class="bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded border">Code Compliant</span>'
-              : '<span class="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded border border-red-200 font-semibold">Non-Compliant</span>'}
-          </div>
+          <ul class="rule-catalog-list divide-y divide-slate-800 text-xs">
+            ${c.items.map(i => `
+              <li class="rule-catalog-item flex justify-between gap-3 px-4 py-2.5">
+                <span class="rule-item-label text-slate-300 font-medium">${esc(i[0])}</span>
+                <span class="rule-item-points font-mono font-bold ${i[1] ? 'point-deduction' : 'point-zero'}">${i[1] ? '-' + i[1] : '0'}</span>
+              </li>
+            `).join('')}
+          </ul>
         </div>
       </div>
+    `).join("");
+  }
 
-      <!-- Score Display -->
-      <div class="text-center p-3.5 rounded-xl border border-slate-200 bg-slate-50 min-w-[140px] shadow-xs">
-        <div class="text-3xl font-black font-heading ${RISK_ACCENTS[result.riskLevel]}">${result.totalScore.toFixed(1)}</div>
-        <div class="text-xs font-bold uppercase tracking-wider text-slate-600 mt-0.5">${result.riskLevel} RISK</div>
-        <span class="inline-block mt-1 text-[11px] font-bold px-2.5 py-0.5 rounded-md ${GRADE_PILLS[result.riskLevel]} font-mono">Grade ${result.grade}</span>
-      </div>
-    </div>
+  /* ======================================================================
+   * Officer Emergency Dispatch Flow
+   * ==================================================================== */
+  function openDispatchModal(id) {
+    const res = findResult(id);
+    if (!res) return;
+    targetDispatchId = id;
+    const b = res.building;
 
-    <!-- Parameter Breakdown Grid -->
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-      <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-        <span class="text-[10px] text-slate-400 uppercase font-semibold block tracking-wider">Primary Material</span>
-        <span class="text-xs font-bold text-slate-800">${escapeHtml(building.primaryMaterial)}</span>
-      </div>
-      <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-        <span class="text-[10px] text-slate-400 uppercase font-semibold block tracking-wider">Structure Age</span>
-        <span class="text-xs font-bold text-slate-800">${building.ageYears} Years</span>
-      </div>
-      <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-        <span class="text-[10px] text-slate-400 uppercase font-semibold block tracking-wider">Floors &amp; Occupancy</span>
-        <span class="text-xs font-bold text-slate-800">${building.floors} fl &bull; ${escapeHtml(building.occupancyType)}</span>
-      </div>
-      <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-        <span class="text-[10px] text-slate-400 uppercase font-semibold block tracking-wider">Maintenance Score</span>
-        <span class="text-xs font-bold ${building.maintenanceScore <= 3 ? 'text-red-600' : 'text-slate-800'}">${building.maintenanceScore} / 10</span>
-      </div>
-    </div>
+    $("dispBuildingName").textContent = b.name + " (" + b.buildingId + ")";
+    $("dispScoreBadge").textContent = "Score: " + res.totalScore.toFixed(1) + " (" + res.riskLevel + ")";
+    $("dispScoreBadge").className = res.isCritical ? "red-flag-badge" : "inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300";
+    $("dispBuildingDetails").textContent = `${b.address} • ${b.primaryMaterial} • ${b.floors} Storeys • Age: ${b.ageYears} yrs`;
+    $("dispHazardReasonBox").textContent = res.hazardFlagReason || "Mandatory municipal structural stability verification.";
 
-    ${building.visionAnalysis ? `
-    <!-- AI Vision Telemetry Section -->
-    <div class="bg-slate-900 text-white rounded-xl p-3.5 space-y-2 border border-slate-700/80 shadow-xs">
-      <div class="flex items-center justify-between text-xs font-bold border-b border-slate-800 pb-1.5 text-sky-400 font-heading">
-        <span class="flex items-center gap-1.5"><i data-lucide="scan" class="w-4 h-4"></i> AI Visual Image Diagnostics</span>
-        <span class="text-[10px] font-mono text-slate-400">${escapeHtml(building.visionAnalysis.engine || 'Vision AI')} &bull; ${Math.round((building.visionAnalysis.confidenceScore || 0.9) * 100)}% Conf</span>
-      </div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-        <div class="bg-slate-800/80 p-2 rounded-lg">
-          <span class="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Identified Typology:</span>
-          <span class="font-bold text-white font-heading">${escapeHtml(building.visionAnalysis.name || building.name)}</span>
-          <div class="text-[11px] text-sky-300 mt-0.5">${escapeHtml(building.visionAnalysis.buildingTypology || building.occupancyType)}</div>
-        </div>
-        <div class="bg-slate-800/80 p-2 rounded-lg">
-          <span class="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Estimated Age &amp; Era:</span>
-          <span class="font-bold text-amber-300 font-mono">~${building.visionAnalysis.estimatedAgeYears || building.ageYears} Years</span>
-          <div class="text-[11px] text-slate-300 mt-0.5">${escapeHtml(building.visionAnalysis.ageDetails?.era || 'Era derived from surface patina')}</div>
-        </div>
-      </div>
-      <div class="bg-slate-800/80 p-2 rounded-lg text-xs">
-        <span class="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Material Composition:</span>
-        <span class="text-slate-200">${escapeHtml(building.visionAnalysis.materialDetails?.composition || (building.primaryMaterial + ' structure'))}</span>
-      </div>
-      ${building.visionAnalysis.detectedItems ? `
-      <div>
-        <span class="text-[10px] uppercase font-bold text-slate-400 block mb-1 tracking-wider">Identified Structural Items in Image:</span>
-        <div class="flex flex-wrap gap-1">
-          ${building.visionAnalysis.detectedItems.map(it => `<span class="bg-slate-800 border border-slate-700 text-sky-200 text-[10px] px-2 py-0.5 rounded font-medium">${escapeHtml(it)}</span>`).join('')}
-        </div>
-      </div>` : ''}
-    </div>
-    ` : ''}
-
-    <!-- Rule Deduction Findings -->
-    <div>
-      <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center justify-between font-heading">
-        <span>Rule-Based Deduction Checklist (${result.findings.length} findings)</span>
-        <span class="text-red-600 text-xs font-mono font-bold">Total Penalties: -${(result.maxScore - result.totalScore).toFixed(1)} pts</span>
-      </h4>
-      <div class="space-y-2 max-h-56 overflow-y-auto pr-1">
-        ${findingsHtml}
-      </div>
-    </div>
-
-    <!-- Official Municipal Recommendations -->
-    <div class="bg-sky-50/70 border border-sky-200 rounded-xl p-3.5">
-      <h4 class="text-xs font-bold uppercase tracking-wider text-sky-900 mb-2 flex items-center gap-1.5 font-heading">
-        <i data-lucide="shield-alert" class="w-4 h-4 text-sky-600"></i> Municipal Structural Action Protocol
-      </h4>
-      <ul class="space-y-1.5">
-        ${recommendationsHtml}
-      </ul>
-    </div>
-  `;
-
-  // Attach Print Notice data safely
-  $("btnPrintNotice").onclick = () => printOfficialNotice(building, result);
-
-  modal.classList.remove("hidden");
-  modal.classList.add("flex");
-  if (window.lucide) lucide.createIcons();
-}
-
-function closeAuditModal() {
-  const modal = $("auditModal");
-  modal.classList.add("hidden");
-  modal.classList.remove("flex");
-}
-
-/* ==========================================================================
-   Photo Modal & Fullscreen View
-   ========================================================================== */
-
-function openPhotoModal(id) {
-  const building = buildingStore.find(b => b.buildingId === id);
-  if (!building) return;
-
-  const safePhoto = sanitizeImageUrl(building.photoDataUrl) || createFacadeSvg(building.primaryMaterial, "#64748b", building.floors);
-  const modal = $("photoModal");
-  $("photoModalImg").src = safePhoto;
-  $("photoModalTitle").textContent = `${building.name} (${building.buildingId})`;
-  modal.classList.remove("hidden");
-  modal.classList.add("flex");
-}
-
-function closePhotoModal() {
-  const modal = $("photoModal");
-  modal.classList.add("hidden");
-  modal.classList.remove("flex");
-}
-
-/* ==========================================================================
-   Print Official Municipal Citation Notice (Secured)
-   ========================================================================== */
-
-function printOfficialNotice(building, result) {
-  const printArea = $("printNoticeArea");
-  const now = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-
-  printArea.innerHTML = `
-    <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; color: #111; padding: 20px;">
-      <div style="border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-        <div>
-          <h1 style="font-size: 18px; font-weight: bold; margin: 0;">MUNICIPAL CORPORATION &mdash; BUILDING SAFETY DEPARTMENT</h1>
-          <p style="font-size: 12px; color: #555; margin: 4px 0 0 0;">Structural Risk Assessment &amp; Inspection Citation Notice</p>
-        </div>
-        <div style="text-align: right; font-size: 11px; color: #555;">
-          <div>Notice ID: <strong>CIT-${escapeHtml(building.buildingId)}-${Date.now().toString().slice(-4)}</strong></div>
-          <div>Date: ${now}</div>
-        </div>
-      </div>
-
-      <div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0;">
-        <table style="width: 100%; font-size: 12px; line-height: 1.6;">
-          <tr>
-            <td><strong>Building ID:</strong> ${escapeHtml(building.buildingId)}</td>
-            <td><strong>Structure Name:</strong> ${escapeHtml(building.name)}</td>
-          </tr>
-          <tr>
-            <td><strong>Location / Ward:</strong> ${escapeHtml(building.address)}</td>
-            <td><strong>Occupancy Type:</strong> ${escapeHtml(building.occupancyType)}</td>
-          </tr>
-          <tr>
-            <td><strong>Primary Material:</strong> ${escapeHtml(building.primaryMaterial)}</td>
-            <td><strong>Estimated Age:</strong> ${building.ageYears} Years</td>
-          </tr>
-          <tr>
-            <td><strong>Storeys / Floors:</strong> ${building.floors}</td>
-            <td><strong>Code Compliance:</strong> ${building.codeCompliant ? 'Compliant' : 'NON-COMPLIANT'}</td>
-          </tr>
-        </table>
-      </div>
-
-      <div style="margin-bottom: 20px; padding: 16px; border: 2px solid ${result.requiresUrgentInspection ? '#dc2626' : '#0284c7'}; background: ${result.requiresUrgentInspection ? '#fef2f2' : '#f0f9ff'};">
-        <h2 style="font-size: 15px; margin: 0 0 8px 0; color: ${result.requiresUrgentInspection ? '#dc2626' : '#0284c7'};">
-          MUNICIPAL STRUCTURAL SCORE: ${result.totalScore.toFixed(1)} / 100.0 &mdash; ${result.riskLevel} RISK (Grade ${result.grade})
-        </h2>
-        <p style="font-size: 12px; margin: 0; font-weight: bold;">
-          ${result.requiresUrgentInspection
-            ? 'ATTENTION: THIS STRUCTURE IS FLAGGED FOR MANDATORY URGENT STRUCTURAL RE-INSPECTION UNDER SECTION 127.'
-            : 'STATUS: Routine statutory monitoring schedule applies.'}
-        </p>
-      </div>
-
-      <div style="margin-bottom: 16px;">
-        <h3 style="font-size: 13px; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 8px;">Deductions &amp; Audit Checklist Findings:</h3>
-        <ul style="font-size: 12px; padding-left: 20px; line-height: 1.6;">
-          ${result.findings.map(f => `<li><strong>${escapeHtml(f.ruleName)} (-${f.deduction.toFixed(1)} pts):</strong> ${escapeHtml(f.description)}</li>`).join("")}
-        </ul>
-      </div>
-
-      <div style="margin-bottom: 24px;">
-        <h3 style="font-size: 13px; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 8px;">Required Engineering Actions:</h3>
-        <ol style="font-size: 12px; padding-left: 20px; line-height: 1.6;">
-          ${result.recommendedActions.map(a => `<li>${escapeHtml(a)}</li>`).join("")}
-        </ol>
-      </div>
-
-      <div style="margin-top: 40px; display: flex; justify-content: space-between; font-size: 12px;">
-        <div style="border-top: 1px solid #000; width: 220px; text-align: center; padding-top: 4px;">
-          Municipal Structural Inspector<br><span style="font-size: 10px; color: #666;">(Signature &amp; Seal)</span>
-        </div>
-        <div style="border-top: 1px solid #000; width: 220px; text-align: center; padding-top: 4px;">
-          Chief Municipal Safety Engineer<br><span style="font-size: 10px; color: #666;">(Authorized Officer)</span>
-        </div>
-      </div>
-    </div>
-  `;
-
-  window.print();
-}
-
-/* ==========================================================================
-   CSV Export (Formula Injection Hardened)
-   ========================================================================== */
-
-function exportQueueToCsv() {
-  const assessed = buildingStore.map(b => assessmentEngine.assess(b)).sort((a, b) => a.totalScore - b.totalScore);
-  const headers = ["Rank", "Building ID", "Name", "Address", "Age", "Material", "Floors", "Occupancy", "Maintenance", "Code Compliant", "Safety Score", "Grade", "Risk Level", "Urgent Inspection"];
-  
-  const rows = assessed.map((r, i) => [
-    i + 1,
-    sanitizeCsvCell(r.building.buildingId),
-    sanitizeCsvCell(r.building.name),
-    sanitizeCsvCell(r.building.address),
-    r.building.ageYears,
-    sanitizeCsvCell(r.building.primaryMaterial),
-    r.building.floors,
-    sanitizeCsvCell(r.building.occupancyType),
-    r.building.maintenanceScore,
-    r.building.codeCompliant ? "YES" : "NO",
-    r.totalScore.toFixed(1),
-    sanitizeCsvCell(r.grade),
-    sanitizeCsvCell(r.riskLevel),
-    r.requiresUrgentInspection ? "YES" : "NO"
-  ]);
-
-  const csvContent = [headers.join(","), ...rows.map(e => e.join(","))].join("\r\n");
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.setAttribute("href", url);
-  link.setAttribute("download", `Municipal_Structural_Safety_Queue_${new Date().toISOString().slice(0, 10)}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-  showToast("Queue exported successfully to CSV!");
-}
-
-/* ==========================================================================
-   Application Initialization & Event Listeners
-   ========================================================================== */
-
-document.addEventListener("DOMContentLoaded", () => {
-  loadStore();
-  renderQueueTable();
-  updateLiveSimulator();
-
-  // Initialize Filter Tabs with Count Badges
-  const filterContainer = $("filterTabs");
-  const filters = ["All", "Urgent Only", "Critical", "High", "Medium", "Low"];
-  
-  filterContainer.innerHTML = filters.map(f =>
-    `<button type="button" data-filter="${f}" class="btn-lift px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${f === activeFilter ? 'tab-active' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}">${f}</button>`
-  ).join("");
-
-  filterContainer.addEventListener("click", e => {
-    const btn = e.target.closest("[data-filter]");
-    if (!btn) return;
-    activeFilter = btn.dataset.filter;
-    Array.from(filterContainer.children).forEach(c => {
-      c.className = `btn-lift px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${c.dataset.filter === activeFilter ? 'tab-active' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`;
-    });
-    renderQueueTable();
-  });
-
-  // KPI card click shortcut filters
-  if ($("kpiCardUrgent")) {
-    $("kpiCardUrgent").addEventListener("click", () => {
-      activeFilter = "Urgent Only";
-      Array.from(filterContainer.children).forEach(c => {
-        c.className = `btn-lift px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${c.dataset.filter === activeFilter ? 'tab-active' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`;
+    // Auto-select recommended squad from CSV metadata if available
+    const csvSquad = b._csvMeta && b._csvMeta.csvSquad ? b._csvMeta.csvSquad : "";
+    const squadSelect = $("dispSquadSelect");
+    if (squadSelect && csvSquad) {
+      // Try to match CSV squad name to a select option (partial, case-insensitive)
+      const csvLower = csvSquad.toLowerCase();
+      let matched = false;
+      Array.from(squadSelect.options).forEach((opt, i) => {
+        if (!matched && opt.value.toLowerCase().includes(csvLower.slice(0, 12))) {
+          squadSelect.selectedIndex = i;
+          matched = true;
+        }
       });
-      renderQueueTable();
-    });
-  }
-  if ($("kpiCardTotal")) {
-    $("kpiCardTotal").addEventListener("click", () => {
-      activeFilter = "All";
-      Array.from(filterContainer.children).forEach(c => {
-        c.className = `btn-lift px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${c.dataset.filter === activeFilter ? 'tab-active' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`;
-      });
-      renderQueueTable();
-    });
-  }
-
-  // Search queue input & clear button
-  $("searchQueue").addEventListener("input", renderQueueTable);
-  if ($("btnClearSearch")) {
-    $("btnClearSearch").addEventListener("click", () => {
-      $("searchQueue").value = "";
-      renderQueueTable();
-      $("searchQueue").focus();
-    });
-  }
-
-  // Reset filters from empty state
-  if ($("btnResetFilter")) {
-    $("btnResetFilter").addEventListener("click", () => {
-      activeFilter = "All";
-      $("searchQueue").value = "";
-      Array.from(filterContainer.children).forEach(c => {
-        c.className = `btn-lift px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${c.dataset.filter === activeFilter ? 'tab-active' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`;
-      });
-      renderQueueTable();
-    });
-  }
-
-  // Live simulator updates from form inputs
-  ["fId", "fName", "fAddr", "fAge", "fFloors", "fMat", "fOcc", "fMaint", "fComp", "fInsp"].forEach(id => {
-    const el = $(id);
-    if (el) {
-      el.addEventListener("input", updateLiveSimulator);
-      el.addEventListener("change", updateLiveSimulator);
+      // If CSV says Alpha, select Alpha; Delta, select Delta; Gamma, select Gamma; etc.
+      if (!matched) {
+        if (csvLower.includes("alpha")) squadSelect.selectedIndex = 0;
+        else if (csvLower.includes("bravo")) squadSelect.selectedIndex = 1;
+        else if (csvLower.includes("delta")) squadSelect.selectedIndex = 2;
+        else if (csvLower.includes("gamma")) squadSelect.selectedIndex = 3;
+      }
     }
-  });
 
-  // Submit and Cancel Edit Buttons
-  $("btnSubmitAssessment").addEventListener("click", handleFormSubmit);
-  if ($("btnCancelEdit")) {
-    $("btnCancelEdit").addEventListener("click", cancelEditMode);
+    // Pre-fill directives with CSV action items (first 2 meaningful actions)
+    const csvActions = b._csvMeta && b._csvMeta.csvActions ? b._csvMeta.csvActions : "";
+    const dispInstr = $("dispInstructions");
+    if (dispInstr && csvActions) {
+      const lines = csvActions.split(" | ").filter(l => l.trim() && !l.includes("\uD83D\uDEA8") && !l.includes("\u26A1")).slice(0, 2);
+      dispInstr.value = lines.length ? lines.join(" ") : "Immediate on-site structural parameter verification.";
+    } else if (dispInstr) {
+      dispInstr.value = res.isCritical
+        ? "Immediate on-site cordoning. Inspect load-bearing piers and verify crack progression. Dispatch if displacement exceeds 5mm."
+        : "Routine structural parameter verification and facade condition assessment.";
+    }
+
+    openModal("dispatchModal");
   }
 
-  // File Upload Drag & Drop & Browse
-  const dropZone = $("uploadPlaceholder");
-  const photoInput = $("photoInput");
-  const btnBrowse = $("btnBrowsePhoto");
-  const btnWebcam = $("btnOpenWebcam");
+  function confirmDispatch() {
+    if (!targetDispatchId) return;
+    const b = buildings.find(x => x.buildingId === targetDispatchId);
+    if (!b) return;
 
-  dropZone.addEventListener("click", e => {
-    // If click was on button, prevent double execution
-    if (e.target.closest("#btnOpenWebcam") || e.target.closest("#btnBrowsePhoto")) return;
-    photoInput.click();
-  });
+    const squad = $("dispSquadSelect").value;
+    const priority = $("dispPrioritySelect").value;
+    const instructions = $("dispInstructions").value.trim() || "Immediate on-site structural parameter verification.";
+    const now = new Date().toISOString();
 
-  btnBrowse.addEventListener("click", e => {
-    e.stopPropagation();
-    photoInput.click();
-  });
+    b.dispatchStatus = "DISPATCHED";
+    b.dispatchDetails = {
+      squad,
+      priority,
+      instructions,
+      dispatchedAt: now
+    };
 
-  photoInput.addEventListener("change", e => {
-    if (e.target.files && e.target.files[0]) {
-      processBuildingPhoto(e.target.files[0]);
+    // Log to registry
+    dispatches.unshift({
+      buildingId: b.buildingId,
+      name: b.name,
+      address: b.address,
+      squad,
+      priority,
+      instructions,
+      dispatchedAt: now
+    });
+
+    saveStore();
+    saveDispatches();
+    closeModal("dispatchModal");
+    renderAll();
+    toast(`🚨 Officers Dispatched to ${b.buildingId} (${b.name}) under ${priority.split("—")[0]}!`, "success");
+    targetDispatchId = null;
+  }
+
+  function batchDispatchCritical() {
+    const { results } = assessAll();
+    const criticals = results.filter(r => r.totalScore < 50.0 && r.building.dispatchStatus !== "DISPATCHED");
+    if (!criticals.length) {
+      toast("All critical structures (< 50) already have officers dispatched.", "info");
+      return;
     }
-  });
 
-  dropZone.addEventListener("dragover", e => {
+    const now = new Date().toISOString();
+    criticals.forEach(r => {
+      const b = r.building;
+      b.dispatchStatus = "DISPATCHED";
+      b.dispatchDetails = {
+        squad: "Squad Alpha — Rapid Collapse Response Team",
+        priority: "CODE RED — Immediate Cordoning (4 Hours SLA)",
+        instructions: "Immediate priority cordoning and ultrasonic verification.",
+        dispatchedAt: now
+      };
+      dispatches.unshift({
+        buildingId: b.buildingId,
+        name: b.name,
+        address: b.address,
+        squad: b.dispatchDetails.squad,
+        priority: b.dispatchDetails.priority,
+        instructions: b.dispatchDetails.instructions,
+        dispatchedAt: now
+      });
+    });
+
+    saveStore();
+    saveDispatches();
+    renderAll();
+    toast(`🚨 Dispatched field officers to all ${criticals.length} critical structures!`, "success");
+  }
+
+  function renderDispatchLogUI() {
+    const list = $("dispatchLogList");
+    const empty = $("dispatchLogEmpty");
+    if (!list) return;
+
+    if (!dispatches.length) {
+      list.innerHTML = "";
+      empty.classList.remove("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+
+    list.innerHTML = dispatches.slice(0, 30).map((d, i) =>
+      '<div class="rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 space-y-1.5 shadow-sm">' +
+      '<div class="flex items-center justify-between"><div class="font-bold text-white font-heading text-xs">#' + (i + 1) + ' ' + esc(d.name) + ' (' + esc(d.buildingId) + ')</div><span class="rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-mono text-[10px] font-bold px-2 py-0.5">' + esc(d.priority.split("—")[0]) + '</span></div>' +
+      '<div class="text-[11px] text-indigo-300 font-semibold">' + esc(d.squad) + '</div>' +
+      '<p class="text-[11px] text-slate-300 italic">"' + esc(d.instructions) + '"</p>' +
+      '<div class="text-[10px] text-slate-400 font-mono flex items-center justify-between border-t border-slate-800 pt-1.5"><span>Target: ' + esc(d.address) + '</span><span>Sent: ' + esc(fmtLong(new Date(d.dispatchedAt))) + '</span></div></div>').join("");
+  }
+
+  /* ======================================================================
+   * Live Simulator & Form
+   * ==================================================================== */
+  function nextId() {
+    let max = 100;
+    buildings.forEach(b => { const m = /^B-(\d+)$/.exec(b.buildingId); if (m) max = Math.max(max, Number(m[1])); });
+    return "B-" + (max + 1);
+  }
+
+  function draftBuilding() {
+    return new Building({
+      buildingId: $("fId").value,
+      name: $("fName").value,
+      address: $("fAddr").value,
+      ageYears: $("fAge").value,
+      floors: $("fFloors").value,
+      primaryMaterial: $("fMat").value,
+      occupancyType: $("fOcc").value,
+      maintenanceScore: $("fMaint").value,
+      lastInspectionYearsAgo: $("fInsp").value,
+      codeCompliant: $("fComp").checked,
+      photoDataUrl: currentPhoto,
+      visionAnalysis: currentVision,
+      createdAt: editingCreatedAt
+    });
+  }
+
+  function simulate() {
+    const res = engine.assess(draftBuilding());
+    $("fMaintVal").textContent = $("fMaint").value;
+    $("simScore").textContent = res.totalScore.toFixed(1);
+    const g = $("simGrade");
+    g.textContent = res.grade;
+    g.className = "flex h-11 w-11 items-center justify-center rounded-xl text-2xl font-black " + GRADE_BG[res.grade];
+    const risk = $("simRisk");
+    if (res.totalScore >= 75.0) {
+      risk.textContent = "🟢 SAFE (SOUND)";
+      risk.className = "status-badge-safe inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold";
+      $("simUrgent").textContent = "Routine: annual inspection cycle";
+    } else if (res.totalScore >= 50.0) {
+      risk.textContent = "🟡 MEDIUM RISK";
+      risk.className = "status-badge-medium inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold";
+      $("simUrgent").textContent = "Monitoring: 60-day cycle";
+    } else {
+      risk.textContent = "🚩 CRITICAL HAZARD";
+      risk.className = "status-badge-critical red-flag-badge";
+      $("simUrgent").textContent = "Urgent SLA: 14 days or immediate";
+    }
+    $("simBreakdown").innerHTML = res.findings.length
+      ? res.findings.map(f => '<li class="flex items-start justify-between gap-2" title="' + esc(f.description) + '"><span class="text-slate-400 truncate">' + esc(f.ruleName.replace(/ Rule$/, "")) + '</span><span class="shrink-0 font-mono font-bold ' + SEV_TEXT[f.severity] + '">-' + f.deduction.toFixed(1) + '</span></li>').join("")
+      : '<li class="text-slate-500">Baseline score 100.0 &bull; No active deductions.</li>';
+  }
+
+  function setField(id, value) { $(id).value = value; }
+
+  function fillFormDefaults() {
+    setField("fId", nextId());
+    ["fName", "fAddr"].forEach(i => setField(i, ""));
+    setField("fAge", 20); setField("fFloors", 3); setField("fMat", "RCC"); setField("fOcc", "Residential");
+    setField("fMaint", 7); setField("fInsp", 2); $("fComp").checked = true;
+  }
+
+  function resetForm() {
+    editingId = null;
+    editingCreatedAt = null;
+    currentPhoto = null;
+    currentVision = null;
+    fillFormDefaults();
+    $("fId").readOnly = false;
+    $("editBadge").classList.add("hidden");
+    $("btnCancelEdit").classList.add("hidden");
+    $("submitLabel").textContent = "Save & Prioritize";
+    $("formError").classList.add("hidden");
+    simulate();
+  }
+
+  function startEdit(id) {
+    const b = buildings.find(x => x.buildingId === id);
+    if (!b) return;
+    editingId = b.buildingId;
+    editingCreatedAt = b.createdAt;
+    currentPhoto = b.photoDataUrl;
+    currentVision = b.visionAnalysis;
+    setField("fId", b.buildingId); setField("fName", b.name); setField("fAddr", b.address);
+    setField("fAge", b.ageYears); setField("fFloors", b.floors); setField("fMat", b.primaryMaterial); setField("fOcc", b.occupancyType);
+    setField("fMaint", b.maintenanceScore); setField("fInsp", b.lastInspectionYearsAgo); $("fComp").checked = b.codeCompliant;
+    $("fId").readOnly = true;
+    $("editBadge").classList.remove("hidden");
+    $("btnCancelEdit").classList.remove("hidden");
+    $("submitLabel").textContent = "Update & Re-Assess";
+    $("formError").classList.add("hidden");
+    simulate();
+    switchView("simulator");
+    toast(`Editing ${b.buildingId} in Assessment Studio.`, "info");
+  }
+
+  function onSubmit(e) {
     e.preventDefault();
-    dropZone.classList.add("border-sky-500", "bg-sky-100/60");
-  });
-
-  dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("border-sky-500", "bg-sky-100/60");
-  });
-
-  dropZone.addEventListener("drop", e => {
-    e.preventDefault();
-    dropZone.classList.remove("border-sky-500", "bg-sky-100/60");
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processBuildingPhoto(e.dataTransfer.files[0]);
+    const id = $("fId").value.trim(), name = $("fName").value.trim(), addr = $("fAddr").value.trim();
+    if (!id || !name || !addr) {
+      $("formError").textContent = "Building ID, Name and Address are required.";
+      $("formError").classList.remove("hidden");
+      return;
     }
-  });
 
-  $("btnRemovePhoto").addEventListener("click", clearUploadedPhoto);
-
-
-
-  // 1-Click Sample Preset Buttons
-  document.querySelectorAll("[data-sample]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const sampleKey = btn.dataset.sample;
-      const sample = SAMPLE_PRESETS[sampleKey];
-      if (sample) {
-        $("fId").value = sample.id || `B-${Math.floor(100 + Math.random() * 900)}`;
-        $("fName").value = sample.name;
-        $("fAddr").value = sample.address || "14 North Industrial Zone, Sector 4";
-        $("fMat").value = sample.material;
-        $("fFloors").value = sample.floors;
-        $("fAge").value = sample.age;
-        $("fMaint").value = sample.maintenance;
-        $("fMaintVal").textContent = sample.maintenance;
-        $("fComp").checked = sample.codeCompliant;
-        $("fInsp").value = sample.inspectionAgo;
-        $("fOcc").value = sample.occupancy;
-        processBuildingPhoto(sample.photo);
-      }
-    });
-  });
-
-  // Webcam Modal buttons (with stopPropagation)
-  btnWebcam.addEventListener("click", e => {
-    e.stopPropagation();
-    startWebcam();
-  });
-  $("btnCaptureWebcam").addEventListener("click", captureWebcamPhoto);
-  $("btnCloseWebcam").addEventListener("click", closeWebcam);
-
-
-
-  // Audit Modal Close
-  document.querySelectorAll(".closeAuditModal").forEach(b => b.addEventListener("click", closeAuditModal));
-  $("auditModal").addEventListener("click", e => { if (e.target === $("auditModal")) closeAuditModal(); });
-
-  // Photo Modal Close
-  document.querySelectorAll(".closePhotoModal").forEach(b => b.addEventListener("click", closePhotoModal));
-  $("photoModal").addEventListener("click", e => { if (e.target === $("photoModal")) closePhotoModal(); });
-
-  // Export CSV
-  $("btnExportCsv").addEventListener("click", exportQueueToCsv);
-
-  // Reset to Defaults
-  $("btnResetData").addEventListener("click", () => {
-    if (confirm("Reset municipal registry to the default 5 benchmark structures?")) {
-      try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
-      loadStore();
-      cancelEditMode();
-      renderQueueTable();
-      updateLiveSimulator();
-      showToast("Municipal registry restored to default benchmark dataset.");
+    const b = draftBuilding();
+    if (editingId) {
+      const idx = buildings.findIndex(x => x.buildingId === editingId);
+      if (idx >= 0) buildings[idx] = b; else buildings.unshift(b);
+    } else {
+      buildings.unshift(b);
     }
-  });
 
-  // Table Row Click Event Delegation (Secure, eliminates inline onclick)
-  $("queueTableBody").addEventListener("click", e => {
-    const actionEl = e.target.closest("[data-action]");
-    if (!actionEl) return;
-
-    const action = actionEl.dataset.action;
-    const id = actionEl.dataset.id;
-    if (!id) return;
-
-    if (action === "audit") {
-      openAuditModal(id);
-    } else if (action === "edit") {
-      loadBuildingIntoForm(id);
-    } else if (action === "delete") {
-      deleteBuilding(id);
-    } else if (action === "photo") {
-      openPhotoModal(id);
-    }
-  });
-
-  // Collapse / Expand Assessment Panel
-  $("formToggleHeader").addEventListener("click", () => {
-    const body = $("formContentArea");
-    body.classList.toggle("hidden");
-    $("formToggleChevron").style.transform = body.classList.contains("hidden") ? "rotate(-90deg)" : "";
-  });
-
-  // Global Keyboard Navigation (Escape to close modals)
-  window.addEventListener("keydown", e => {
-    if (e.key === "Escape") {
-      closeAuditModal();
-      closePhotoModal();
-      closeWebcam();
-    }
-  });
-
-  // Mobile Tab Switchers
-  if ($("tabBtnForm")) {
-    $("tabBtnForm").addEventListener("click", () => switchToMobileTab("form"));
-  }
-  if ($("tabBtnQueue")) {
-    $("tabBtnQueue").addEventListener("click", () => switchToMobileTab("queue"));
+    saveStore();
+    resetForm();
+    renderAll();
+    switchView("queue");
+    toast(`Structure ${b.buildingId} prioritized in registry.`, "success");
   }
 
-  // Native Mobile Camera Ingestion
-  const cameraInput = $("cameraInput");
-  if (cameraInput) {
-    cameraInput.addEventListener("change", e => {
-      if (e.target.files && e.target.files[0]) {
-        processBuildingPhoto(e.target.files[0]);
-      }
+  /* ======================================================================
+   * Side Drawer Scanner & Photo Handling
+   * ==================================================================== */
+  function clearPhotoState() {
+    scanToken++;
+    currentPhoto = null;
+    currentVision = null;
+    $("photoPreview").classList.add("hidden");
+    $("telemetry").classList.add("hidden");
+    $("dropZone").classList.remove("hidden");
+    $("scannerLaser").classList.add("hidden");
+    $("photoInput").value = "";
+    $("photoStatus").textContent = "No photo";
+  }
+
+  function readFile(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(new Error("File read failure."));
+      r.readAsDataURL(file);
     });
   }
 
-  // Window Resize Handler (Resets dual column layout on desktop screens)
-  window.addEventListener("resize", () => {
-    if (window.innerWidth >= 1024) {
-      if ($("panelForm")) {
-        $("panelForm").classList.remove("hidden");
-        $("panelForm").classList.add("block");
-      }
-      if ($("panelQueue")) {
-        $("panelQueue").classList.remove("hidden");
-        $("panelQueue").classList.add("block");
-      }
+  async function downscale(src, maxW, quality) {
+    try {
+      const img = await vision.loadImage(src);
+      const iw = img.naturalWidth || img.width;
+      const scale = Math.min(1, maxW / iw);
+      const c = document.createElement("canvas");
+      c.width = Math.round(iw * scale);
+      c.height = Math.round((img.naturalHeight || img.height) * scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      return c.toDataURL("image/jpeg", quality);
+    } catch (e) {
+      return src;
     }
-  });
+  }
 
-  if (window.lucide) lucide.createIcons();
-});
+  async function handleFile(file) {
+    if (!file) return;
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) { toast("Please upload a JPEG, PNG or WEBP facade image.", "error"); return; }
+    if (file.size > 10 * 1024 * 1024) { toast("Image exceeds 10MB limit.", "error"); return; }
+    try {
+      const raw = await readFile(file);
+      const small = await downscale(raw, 900, 0.82);
+      await processPhoto(small, null);
+    } catch (err) {
+      toast(err.message || "Failed to process photo.", "error");
+    }
+  }
 
-// Global exports for testing / external access
-window.openAuditModal = openAuditModal;
-window.openPhotoModal = openPhotoModal;
-window.deleteBuilding = deleteBuilding;
-window.loadBuildingIntoForm = loadBuildingIntoForm;
-window.switchToMobileTab = switchToMobileTab;
+  async function processPhoto(src, preset) {
+    const token = ++scanToken;
+    $("dropZone").classList.add("hidden");
+    $("photoPreview").classList.remove("hidden");
+    $("telemetry").classList.add("hidden");
+    $("scannerLaser").classList.remove("hidden");
+    $("photoStatus").textContent = "Scanning...";
+
+    try {
+      let analysis;
+      if (preset) {
+        try {
+          const img = await vision.loadImage(src);
+          if (img && $("photoCanvas")) {
+            vision.renderOverlay(img, $("photoCanvas"), preset.vision);
+          }
+        } catch (imgErr) {
+          console.warn("Preset image display warning:", imgErr);
+        }
+        analysis = preset.vision;
+      } else {
+        analysis = await vision.inspectPhoto(src, $("photoCanvas"));
+      }
+      await sleep(500);
+      if (token !== scanToken) return;
+
+      currentVision = analysis;
+      currentPhoto = preset || /^data:image\/svg/.test(src) ? src : await downscale(src, 640, 0.72);
+      if (token !== scanToken) return;
+
+      applyVision(analysis, !!preset);
+      renderTelemetry(analysis);
+      $("photoStatus").textContent = preset ? "Sample Loaded" : "Scanned";
+      simulate();
+      toast("Elevation scanned & auto-synced into form.", "success");
+    } catch (err) {
+      if (token !== scanToken) return;
+      console.error(err);
+      clearPhotoState();
+      toast(err.message || "Analysis failed.", "error");
+    } finally {
+      if (token === scanToken) $("scannerLaser").classList.add("hidden");
+    }
+  }
+
+  function applyVision(v, overwriteText) {
+    if (v.primaryMaterial) setField("fMat", v.primaryMaterial);
+    if (v.floors) setField("fFloors", v.floors);
+    if (v.estimatedAgeYears) setField("fAge", v.estimatedAgeYears);
+    if (v.maintenanceScore) setField("fMaint", v.maintenanceScore);
+    if (v.occupancyType) setField("fOcc", v.occupancyType);
+    if (v.name && (overwriteText || !$("fName").value.trim())) setField("fName", v.name);
+  }
+
+  function renderTelemetry(v) {
+    $("telemetry").classList.remove("hidden");
+    $("tvName").textContent = v.name || "Target Elevation";
+    $("tvTypology").textContent = v.buildingTypology || (v.materialDetails && v.materialDetails.composition) || "Elevation Analysis";
+    $("tvMaterial").textContent = v.primaryMaterial || "-";
+    $("tvFloors").textContent = v.floors ? v.floors + " Fl" : "n/a";
+    $("tvAge").textContent = v.estimatedAgeYears ? "~" + v.estimatedAgeYears + " Yrs" : "n/a";
+    $("tvConfidence").textContent = Math.round((v.confidenceScore || 0) * 100) + "% confidence";
+
+    const sev = v.crackSeverity || "none";
+    const box = $("tvDistress");
+    box.className = "p-2 rounded-lg border text-[11px] " + (DISTRESS_STYLE[sev] || DISTRESS_STYLE.none);
+    $("tvDistressTitle").textContent = DISTRESS_TEXT[sev][0];
+    $("tvDistressDesc").textContent = DISTRESS_TEXT[sev][1];
+
+    $("tvItems").innerHTML = (v.detectedItems || []).map(i => '<li class="rounded-full bg-slate-800 border border-slate-700 px-2 py-0.5 text-[9px] font-semibold text-slate-300">' + esc(i) + "</li>").join("");
+
+    const note = $("tvNote");
+    if (v.indicative) {
+      note.textContent = "Conservative heuristic scan: color statistics, fracture lines, and periodic storey bands calibrated.";
+      note.classList.remove("hidden");
+    } else {
+      note.classList.add("hidden");
+    }
+  }
+
+  /* Webcam */
+  async function openCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast("Camera access unsupported.", "error"); return; }
+    $("webcamMsg").classList.add("hidden");
+    openModal("webcamModal");
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      $("webcamVideo").srcObject = cameraStream;
+    } catch (e) {
+      $("webcamMsg").textContent = "Camera access denied or unavailable.";
+      $("webcamMsg").classList.remove("hidden");
+    }
+  }
+
+  function stopCamera() {
+    if (cameraStream) cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+    const v = $("webcamVideo");
+    if (v) v.srcObject = null;
+  }
+
+  async function captureCamera() {
+    const v = $("webcamVideo");
+    if (!cameraStream || !v.videoWidth) { toast("Camera initializing.", "warn"); return; }
+    const c = document.createElement("canvas");
+    c.width = v.videoWidth;
+    c.height = v.videoHeight;
+    c.getContext("2d").drawImage(v, 0, 0);
+    const dataUrl = c.toDataURL("image/jpeg", 0.85);
+    closeModal("webcamModal");
+    await processPhoto(await downscale(dataUrl, 900, 0.82), null);
+  }
+
+  /* ======================================================================
+   * Audit Report & Official Print Notice
+   * ==================================================================== */
+  function findResult(id) {
+    const b = buildings.find(x => x.buildingId === id);
+    return b ? engine.assess(b) : null;
+  }
+
+  let auditId = null;
+
+  function openAudit(id) {
+    const res = findResult(id);
+    if (!res) return;
+    auditId = id;
+    const b = res.building;
+    const v = b.visionAnalysis;
+
+    const params = [
+      ["Age", b.ageYears + " yrs"], ["Material", b.primaryMaterial], ["Storeys", b.floors], ["Occupancy", b.occupancyType],
+      ["Maintenance", b.maintenanceScore + " / 10"], ["NBC Compliant", b.codeCompliant ? "Verified" : "Non-Compliant"],
+      ["Last Audit", b.lastInspectionYearsAgo + " yrs ago"], ["Inspection SLA", dueText(res)]
+    ].map(p => '<div class="audit-param-pill rounded-xl p-2.5"><p class="audit-param-label text-[9px] font-bold uppercase tracking-wider font-mono">' + p[0] + '</p><p class="audit-param-value text-xs font-bold mt-0.5">' + esc(p[1]) + '</p></div>').join("");
+
+    const photoBlock = b.photoDataUrl
+      ? '<div class="audit-photo-card mt-4 flex flex-col gap-3 sm:flex-row p-3 rounded-2xl">' +
+        '<button type="button" data-action="photo" data-id="' + esc(b.buildingId) + '" class="shrink-0 overflow-hidden rounded-xl border border-slate-700 sm:w-52 h-36 bg-slate-950 shadow-sm"><img src="' + esc(b.photoDataUrl) + '" alt="" class="h-full w-full object-cover"></button>' +
+        (v ? '<div class="audit-diag-box min-w-0 text-xs space-y-1"><p class="text-[10px] font-bold uppercase tracking-wider text-sky-400 font-mono">Elevation Diagnostics</p>' +
+          '<p class="leading-relaxed font-medium">' + esc(v.aiSummary || "") + '</p></div>' : '<div class="text-xs text-slate-400 italic">Elevation photo recorded.</div>') + '</div>'
+      : "";
+
+    const findings = (res.findings || []).length
+      ? '<div class="overflow-x-auto"><table class="audit-table w-full min-w-[480px] text-left text-xs"><thead class="text-[10px] font-bold uppercase tracking-wider font-mono border-b"><tr><th class="py-2 pr-3">Category</th><th class="py-2 pr-3">Finding</th><th class="py-2 text-right">Points</th></tr></thead><tbody class="divide-y">' +
+        res.findings.map(f => '<tr><td class="py-2 pr-3 align-top"><span class="rounded-full px-2 py-0.5 text-[9px] font-bold ' + SEV_BADGE[f.severity] + '">' + esc(f.category) + '</span></td><td class="py-2 pr-3 align-top">' + esc(f.description) + '</td><td class="py-2 text-right font-mono font-bold point-deduction">-' + Number(f.deduction).toFixed(1) + '</td></tr>').join("") +
+        '</tbody><tfoot><tr class="border-t-2"><td colspan="2" class="py-2 font-bold">Total Deduction</td><td class="py-2 text-right font-mono font-black point-deduction">-' + (100 - res.totalScore).toFixed(1) + '</td></tr></tfoot></table></div>'
+      : '<p class="text-xs text-slate-500">No active deductions recorded.</p>';
+
+        // CSV squad recommendation block
+    const csvSquadBlock = (b._csvMeta && b._csvMeta.csvSquad)
+      ? '<div class="mt-3 flex items-center gap-2 rounded-xl px-3.5 py-2.5 bg-indigo-950/60 border border-indigo-500/30 text-xs"><i data-lucide="shield" class="w-3.5 h-3.5 text-indigo-400 shrink-0"></i><span class="text-slate-400 font-mono uppercase text-[10px] font-bold mr-1.5">Recommended Squad:</span><span class="text-indigo-300 font-semibold">' + esc(b._csvMeta.csvSquad) + '</span></div>'
+      : "";
+
+$("auditContent").innerHTML =
+      '<div class="flex flex-wrap items-start justify-between gap-4"><div class="min-w-0"><h3 class="text-base font-extrabold font-heading audit-heading">' + esc(b.name) + '</h3><p class="text-xs text-slate-400"><span class="font-mono font-semibold text-sky-500">' + esc(b.buildingId) + '</span> &bull; ' + esc(b.address) + '</p></div>' +
+      '<div class="flex items-center gap-3"><div class="text-right"><p class="font-mono text-2xl font-black audit-score-val">' + res.totalScore.toFixed(1) + '</p><span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ' + RISK_PILL[res.riskLevel] + '">' + res.riskLevel + ' RISK</span></div>' +
+      '<div class="flex h-12 w-12 items-center justify-center rounded-xl text-2xl font-black text-white ' + GRADE_BG[res.grade] + '">' + res.grade + '</div></div></div>' +
+      (res.isCritical ? '<div class="audit-critical-banner rounded-xl p-3 text-xs font-bold flex items-center gap-2"><i data-lucide="flag" class="w-4 h-4 text-rose-500"></i>🚩 CRITICAL HAZARD &bull; Immediate Section 127 Cordoning &amp; Officer Dispatch Mandated</div>' : '') +
+      csvSquadBlock +
+      '<div class="grid grid-cols-2 gap-2 sm:grid-cols-4 mt-3">' + params + '</div>' + photoBlock +
+      '<h4 class="mb-1.5 mt-4 text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Itemised Checklist Deductions</h4>' + findings +
+      '<h4 class="mb-1.5 mt-4 text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Statutory Municipal Directives</h4><ol class="list-decimal space-y-1 pl-5 text-xs text-slate-300 audit-directives">' + (res.recommendedActions || []).map(a => '<li>' + esc(a) + '</li>').join("") + '</ol>';
+    refreshIcons();
+    openModal("auditModal");
+  }
+
+  function printNotice() {
+    const res = findResult(auditId);
+    if (!res) return;
+    const b = res.building, now = new Date();
+    const deadline = new Date(now.getTime() + (res.dueInDays || 14) * 86400000);
+    const ref = "MSN-" + b.buildingId.replace(/[^A-Za-z0-9]/g, "") + "-" + now.toISOString().slice(0, 10).replace(/-/g, "");
+    const row = (k, v) => '<tr><td style="padding:5px 12px 5px 0;color:#555;width:38%">' + k + '</td><td style="padding:5px 0;font-weight:600">' + esc(v) + "</td></tr>";
+    $("printNoticeArea").innerHTML =
+      '<div style="font-family:Inter,Arial,sans-serif;max-width:720px;margin:0 auto;color:#111;padding:20px">' +
+      '<div style="border-bottom:3px solid #0f172a;padding-bottom:12px;display:flex;justify-content:space-between;align-items:flex-end"><div><div style="font-size:10px;letter-spacing:2px;font-weight:700;color:#555">MUNICIPAL BUILDING SAFETY DEPARTMENT</div><h1 style="font-size:22px;margin:4px 0 0;font-weight:800">Structural Safety Inspection Notice</h1></div><div style="text-align:right;font-size:11px"><div>Ref: <strong>' + esc(ref) + '</strong></div><div>Issued: ' + esc(fmtLong(now)) + '</div></div></div>' +
+      '<h2 style="font-size:13px;margin:16px 0 6px;text-transform:uppercase;letter-spacing:1px;color:#333">1. Property Profile</h2><table style="width:100%;font-size:12px;border-collapse:collapse">' +
+      row("Building Name", b.name + " (" + b.buildingId + ")") + row("Site Address", b.address) + row("Structural Material / Storeys", b.primaryMaterial + " / " + b.floors + " Storeys") + row("Age / Occupancy", b.ageYears + " Years / " + b.occupancyType) + row("Last Statutory Audit", b.lastInspectionYearsAgo + " Years Ago") + row("Code Compliance Status", b.codeCompliant ? "Verified NBC Compliant" : "Non-Compliant / Unverified") + "</table>" +
+      '<h2 style="font-size:13px;margin:16px 0 6px;text-transform:uppercase;letter-spacing:1px;color:#333">2. Evaluation Results</h2><table style="width:100%;font-size:12px;border-collapse:collapse">' +
+      row("Safety Score", res.totalScore.toFixed(1) + " / 100 (Grade " + res.grade + ")") + row("Risk Band", res.riskLevel) + row("Condition Priority", res.isCritical ? "🚩 CRITICAL HAZARD — IMMEDIATE ACTION" : "Routine Municipal Cycle") + row("Statutory Inspection SLA", fmtLong(deadline) + " (" + dueText(res).toLowerCase() + ")") + "</table>" +
+      '<h2 style="font-size:13px;margin:16px 0 6px;text-transform:uppercase;letter-spacing:1px;color:#333">3. Checklist Deductions</h2><ul style="font-size:12px;line-height:1.5;padding-left:18px;margin:0">' +
+      ((res.findings || []).length ? res.findings.map(f => '<li>' + esc(f.description) + ' (-' + Number(f.deduction).toFixed(1) + ' pts)</li>').join("") : '<li>No active deductions recorded.</li>') + '</ul>' +
+      '<h2 style="font-size:13px;margin:16px 0 6px;text-transform:uppercase;letter-spacing:1px;color:#333">4. Statutory Directives</h2><ol style="font-size:12px;line-height:1.5;padding-left:18px;margin:0">' + (res.recommendedActions || []).map(a => '<li>' + esc(a) + '</li>').join("") + '</ol>' +
+      '<div style="display:flex;justify-content:space-between;margin-top:44px;font-size:11px"><div style="border-top:1px solid #111;padding-top:4px;width:44%">Inspecting Municipal Engineer (Signature &amp; Date)</div><div style="border-top:1px solid #111;padding-top:4px;width:44%">Authorised Structural Officer</div></div></div>';
+    window.print();
+  }
+
+  /* ======================================================================
+   * Scoring Rules Catalog
+   * ==================================================================== */
+  function openRules() {
+    const catalog = [
+      { rule: "Structural Age", category: "Lifespan & Fatigue", items: [["60+ years", 25], ["40-59 years", 18], ["25-39 years", 10], ["15-24 years", 5], ["Under 15 years", 0]] },
+      { rule: "Primary Material", category: "Material Integrity", items: [["Wood / Timber", 18], ["Non-standard", 15], ["Brick Masonry", 12], ["Mixed / Composite", 10], ["Steel", 3], ["RCC (baseline)", 0]] },
+      { rule: "Maintenance Condition", category: "Physical Upkeep", items: [["Rating 1-2 (Severe)", 25], ["Rating 3-4 (Substandard)", 18], ["Rating 5-6 (Average)", 10], ["Rating 7-8 (Good)", 4], ["Rating 9-10 (Pristine)", 0]] },
+      { rule: "Code Compliance", category: "Regulatory Standards", items: [["Non-Compliant with NBC seismic codes", 20], ["Verified Compliant", 0]] },
+      { rule: "Inspection Recency", category: "Audit Monitoring", items: [["10+ years overdue", 15], ["7-9 years overdue", 10], ["5-6 years overdue", 5], ["Under 5 years", 0]] },
+      { rule: "Height & Occupancy", category: "Consequence Exposure", items: [["10+ floors (High-rise)", 8], ["5-9 floors (Mid-rise)", 4], ["High consequence (Hospital, School, Public)", 7], ["Commercial / Mixed", 3], ["Residential", 0]] }
+    ];
+
+    $("rulesContent").innerHTML =
+      '<div class="rules-banner rounded-xl p-3.5 mb-3 text-xs">' +
+      '<p class="rules-banner-title font-bold font-heading mb-1.5 flex items-center gap-1.5"><i data-lucide="gauge" class="w-4 h-4 text-sky-500"></i> Municipal Risk Classification Thresholds</p>' +
+      '<div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-2.5">' +
+      '<div class="rule-threshold-card rule-threshold-safe rounded-xl p-3">' +
+      '<span class="threshold-pill-title font-bold font-heading flex items-center gap-1.5">🟢 SAFE (Score ≥ 75)</span>' +
+      '<span class="threshold-pill-desc text-[11px] mt-1 block">Grade A / B. Structurally sound. Routine annual cycle.</span>' +
+      '</div>' +
+      '<div class="rule-threshold-card rule-threshold-medium rounded-xl p-3">' +
+      '<span class="threshold-pill-title font-bold font-heading flex items-center gap-1.5">🟡 MEDIUM (Score 50-75)</span>' +
+      '<span class="threshold-pill-desc text-[11px] mt-1 block">Grade C. Moderate wear. 60-day municipal audit cycle.</span>' +
+      '</div>' +
+      '<div class="rule-threshold-card rule-threshold-critical rounded-xl p-3">' +
+      '<span class="threshold-pill-title font-bold font-heading flex items-center gap-1.5">🚩 HIGH RISK (Score &lt; 50)</span>' +
+      '<span class="threshold-pill-desc text-[11px] mt-1 block">Grade D / F. Red-flagged critical hazard. Mandatory officer dispatch.</span>' +
+      '</div>' +
+      '</div></div>' +
+      '<p class="rules-intro-text text-xs leading-relaxed mb-3">Baseline safety score begins at <strong class="rules-intro-bold">100.0</strong>. Deductions are calculated from verified physical parameters:</p>' +
+      '<div class="grid gap-3 grid-cols-1 md:grid-cols-2">' + catalog.map(c =>
+        '<div class="rule-catalog-card rounded-xl overflow-hidden">' +
+        '<div class="rule-catalog-header flex items-center justify-between px-4 py-2.5">' +
+        '<p class="rule-catalog-title text-xs font-bold font-heading">' + esc(c.rule) + '</p>' +
+        '<p class="rule-catalog-cat text-[10px] font-semibold font-mono">' + esc(c.category) + '</p>' +
+        '</div>' +
+        '<ul class="rule-catalog-list divide-y text-xs">' + c.items.map(i =>
+          '<li class="rule-catalog-item flex justify-between gap-3 px-4 py-2">' +
+          '<span class="rule-item-label">' + esc(i[0]) + '</span>' +
+          '<span class="rule-item-points font-mono font-bold ' + (i[1] ? "point-deduction" : "point-zero") + '">' + (i[1] ? "-" + i[1] : "0") + '</span>' +
+          '</li>').join("") +
+        '</ul></div>').join("") +
+      '</div>';
+    refreshIcons();
+    openModal("rulesModal");
+  }
+
+  /* ======================================================================
+   * CSV Export
+   * ==================================================================== */
+  function exportCsv() {
+    const { byRisk } = assessAll();
+    if (!byRisk.length) { toast("Registry is empty.", "warn"); return; }
+    const head = ["Rank", "Building ID", "Name", "Address", "Age", "Material", "Floors", "Occupancy", "Maintenance", "Compliant", "Score", "Risk Level", "Condition", "Officers Dispatched"];
+    const rows = byRisk.map((r, i) => {
+      const b = r.building;
+      return [i + 1, b.buildingId, b.name, b.address, b.ageYears, b.primaryMaterial, b.floors, b.occupancyType, b.maintenanceScore, b.codeCompliant ? "Yes" : "No", r.totalScore.toFixed(1), r.riskLevel, r.isCritical ? "CRITICAL HAZARD" : "STANDARD", b.dispatchStatus];
+    });
+    const csv = [head].concat(rows).map(row => row.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(",")).join("\r\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "municipal_structural_safety_queue_" + new Date().toISOString().slice(0, 10) + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Exported " + rows.length.toLocaleString() + " structures to CSV.", "success");
+  }
+
+  /* ======================================================================
+   * Dataset Reset & Switchers
+   * ==================================================================== */
+  function load1000Dataset() {
+    if (window.MUNICIPAL_1000_DATASET && Array.isArray(window.MUNICIPAL_1000_DATASET)) {
+      buildings = window.MUNICIPAL_1000_DATASET.map(b => new Building(b));
+      filter = "all"; query = ""; sortKey = "risk"; currentPage = 1;
+      $("searchQueue").value = ""; $("sortQueue").value = "risk";
+      setActiveTab("all");
+      saveStore();
+      resetForm();
+      renderAll();
+      toast("Loaded 1,000-structure municipal dataset.", "success");
+    } else {
+      toast("1,000 dataset is not ready in memory.", "warn");
+    }
+  }
+
+  function restoreInternalData() {
+    buildings = DEFAULT_INTERNAL_DATASET.map(b => new Building(b));
+    filter = "all"; query = ""; sortKey = "risk"; currentPage = 1;
+    $("searchQueue").value = ""; $("sortQueue").value = "risk";
+    setActiveTab("all");
+    saveStore();
+    resetForm();
+    renderAll();
+    toast("Restored internal municipal benchmark dataset (12 structures).", "success");
+  }
+
+  function setActiveTab(f) {
+    filter = f;
+    currentPage = 1;
+    document.querySelectorAll("#filterTabs [data-filter]").forEach(t => {
+      const on = t.dataset.filter === f;
+      t.classList.toggle("tab-active", on);
+    });
+  }
+
+  function openPhotoModal(src, title) {
+    $("photoModalImg").src = src;
+    $("photoModalTitle").textContent = title || "Elevation Photo";
+    openModal("photoModal");
+  }
+
+  /* ======================================================================
+   * Event Wiring
+   * ==================================================================== */
+  function wireEvents() {
+    // Modals
+    document.querySelectorAll("[data-close]").forEach(btn => btn.addEventListener("click", () => closeModal(btn.dataset.close)));
+    document.querySelectorAll(".modal").forEach(m => m.addEventListener("mousedown", e => { if (e.target === m) { if (m.id === "confirmModal") settleConfirm(false); else closeModal(m.id); } }));
+    document.addEventListener("keydown", e => {
+      if (e.key !== "Escape") return;
+      const open = Array.from(document.querySelectorAll(".modal.open")).pop();
+      if (open) { if (open.id === "confirmModal") settleConfirm(false); else closeModal(open.id); }
+      if ($("sideScannerDrawer").classList.contains("open")) closeSideScanner();
+    });
+    $("confirmOk").addEventListener("click", () => settleConfirm(true));
+    $("confirmCancel").addEventListener("click", () => settleConfirm(false));
+
+    const on = (id, evt, fn) => { const el = $(id); if (el) el.addEventListener(evt, fn); };
+
+    // Desktop & Mobile Sidebar Access via Three Bars (☰ Hamburger Menu)
+    const setDesktopSidebarMode = (active) => {
+      const shell = $("appShell");
+      if (!shell) return;
+      shell.classList.toggle("sidebar-active", active);
+      localStorage.setItem("app_desktop_sidebar_mode", active ? "sidebar" : "top");
+      refreshIcons();
+    };
+
+    const toggleSidebar = () => {
+      const shell = $("appShell");
+      if (!shell) return;
+      const isMobile = window.innerWidth < 1024;
+      if (isMobile) {
+        const isOpen = shell.classList.toggle("sidebar-mobile-open");
+        const backdrop = $("sidebarBackdrop");
+        if (backdrop) backdrop.classList.toggle("active", isOpen);
+        toast(isOpen ? "Sidebar opened (☰)" : "Sidebar closed", "info");
+      } else {
+        const current = shell.classList.contains("sidebar-active");
+        setDesktopSidebarMode(!current);
+        toast(!current ? "Desktop Sidebar expanded (☰)." : "Desktop Sidebar collapsed.", "info");
+      }
+      refreshIcons();
+    };
+
+    const closeSidebarMobile = () => {
+      const shell = $("appShell");
+      if (shell) shell.classList.remove("sidebar-mobile-open");
+      const backdrop = $("sidebarBackdrop");
+      if (backdrop) backdrop.classList.remove("active");
+    };
+
+    // THREE BARS (HAMBURGER) CLICK HANDLERS - EXCLUSIVE ACCESS TRIGGER
+    on("btnSidebarHamburger", "click", toggleSidebar);
+    on("btnMinimizeSidebar", "click", () => {
+      if (window.innerWidth < 1024) closeSidebarMobile();
+      else setDesktopSidebarMode(false);
+      toast("Sidebar collapsed (☰).", "info");
+    });
+    on("sidebarBackdrop", "click", closeSidebarMobile);
+    on("btnSidebarLayoutToggle", "click", () => {
+      if (window.innerWidth < 1024) closeSidebarMobile();
+      else setDesktopSidebarMode(false);
+      toast("Sidebar collapsed (☰).", "info");
+    });
+    on("btnSidebarNewBuilding", "click", () => {
+      resetForm();
+      switchView("simulator");
+      if (window.innerWidth < 1024) closeSidebarMobile();
+    });
+
+    // Keyboard Shortcut: Ctrl+B or Cmd+B to toggle sidebar with 3 bars
+    window.addEventListener("keydown", e => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "b" || e.key === "B")) {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    });
+
+    // Sidebar Navigation Tabs (All 6 new features)
+    const sidebarNavTabs = $("sidebarNavTabs");
+    if (sidebarNavTabs) {
+      sidebarNavTabs.addEventListener("click", e => {
+        const btn = e.target.closest("[data-nav-view]");
+        if (btn && btn.dataset.navView) {
+          switchView(btn.dataset.navView);
+          if (window.innerWidth < 1024) closeSidebarMobile();
+        }
+      });
+    }
+
+    // Sidebar KPI Cards (The 2nd Image in Left Sidebar!)
+    on("sidebarKpiCardTotal", "click", () => { switchView("queue"); setActiveTab("all"); renderAll(); });
+    on("sidebarKpiCardFlagged", "click", () => { switchView("queue"); setActiveTab("critical"); renderAll(); });
+    on("sidebarKpiCardDispatched", "click", () => switchView("deployments"));
+    on("sidebarKpiCardAvg", "click", () => switchView("analytics"));
+    on("sidebarKpiCardComp", "click", () => switchView("rules"));
+
+    // Sidebar Tool Actions
+    on("btnSidebarThemeToggle", "click", toggleTheme);
+    on("btnSidebarExportCsv", "click", exportCsv);
+
+    // Primary Workspace Navigation Tabs
+    const navTabs = $("mainNavTabs");
+    if (navTabs) {
+      navTabs.addEventListener("click", e => {
+        const btn = e.target.closest("[data-nav-view]");
+        if (btn && btn.dataset.navView) switchView(btn.dataset.navView);
+      });
+    }
+
+    // Quick Workspace Action Triggers
+    on("btnQuickNewBuilding", "click", () => { resetForm(); switchView("simulator"); });
+    on("btnQueueNewAssessment", "click", () => { resetForm(); switchView("simulator"); });
+    on("btnStudioOpenScanner", "click", () => switchView("scanner"));
+    on("btnDeploymentsBatchDispatch", "click", batchDispatchCritical);
+    on("btnDrawerSwitchToFullScanner", "click", () => { closeSideScanner(); switchView("scanner"); });
+
+    // Side Drawer Triggers
+    on("btnOpenSideScanner", "click", () => switchView("scanner"));
+    on("btnOpenSideScannerCard", "click", () => switchView("scanner"));
+    on("floatingScanBtn", "click", () => switchView("scanner"));
+    on("btnCloseSideScanner", "click", closeSideScanner);
+    on("sideDrawerBackdrop", "click", closeSideScanner);
+    on("btnApplyScanToForm", "click", () => {
+      closeSideScanner();
+      switchView("simulator");
+      toast("Elevation telemetry applied to assessment.", "info");
+    });
+
+    // Officer Dispatch Triggers
+    on("btnBatchDispatch", "click", batchDispatchCritical);
+    on("btnConfirmDispatch", "click", confirmDispatch);
+    on("btnOpenDispatchLog", "click", () => switchView("deployments"));
+    on("btnClearDispatchHistory", "click", () => {
+      dispatches = [];
+      saveDispatches();
+      renderDispatchLogUI();
+      renderOperationsView();
+      toast("Dispatch history cleared.", "info");
+    });
+
+    // Dataset Switchers & Quick Resets
+    on("btnThemeToggle", "click", toggleTheme);
+    on("btnExportCsv", "click", exportCsv);
+    on("btnRules", "click", () => switchView("rules"));
+    on("btnResetData", "click", () => openModal("resetModal"));
+    on("btnReloadDatasetModal", "click", () => { load1000Dataset(); closeModal("resetModal"); });
+    on("btnClearAllModal", "click", () => {
+      buildings = [];
+      saveStore();
+      resetForm();
+      renderAll();
+      closeModal("resetModal");
+      toast("Registry cleared.", "success");
+    });
+
+    // KPI Card Navigation
+    on("kpiCardTotal", "click", () => { switchView("queue"); setActiveTab("all"); renderAll(); });
+    on("kpiCardFlagged", "click", () => { switchView("queue"); setActiveTab("critical"); renderAll(); });
+    on("kpiCardDispatched", "click", () => switchView("deployments"));
+
+    // Form
+    on("buildingForm", "submit", onSubmit);
+    on("buildingForm", "input", simulate);
+    on("buildingForm", "change", simulate);
+    on("btnCancelEdit", "click", resetForm);
+
+    // Side Drawer / Scanner Actions
+    on("btnBrowse", "click", () => { const p = $("photoInput"); if (p) p.click(); });
+    on("photoInput", "change", e => handleFile(e.target.files[0]));
+    on("btnCamera", "click", openCamera);
+    on("btnCapture", "click", captureCamera);
+    on("btnRemovePhoto", "click", () => { clearPhotoState(); simulate(); });
+    on("btnEnlarge", "click", () => { if (currentPhoto) openPhotoModal(currentPhoto, $("fName")?.value || "Facade Photo"); });
+    
+    const dz = $("dropZone");
+    if (dz) {
+      ["dragenter", "dragover"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("border-sky-500", "bg-sky-100"); }));
+      ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("border-sky-500", "bg-sky-100"); }));
+      dz.addEventListener("drop", e => handleFile(e.dataTransfer.files[0]));
+    }
+
+    const sb = $("sampleBar");
+    if (sb) {
+      sb.addEventListener("click", e => {
+        const btn = e.target.closest("[data-sample]");
+        if (!btn) return;
+        const p = PRESETS[btn.dataset.sample];
+        if (!p) return;
+        if (!editingId) setField("fId", nextId());
+        setField("fName", p.name); setField("fAddr", p.address); setField("fInsp", p.audit); $("fComp").checked = p.compliant;
+        processPhoto(p.photo, p);
+      });
+    }
+
+    // Queue Controls & Pagination
+    on("filterTabs", "click", e => {
+      const t = e.target.closest("[data-filter]");
+      if (t) { setActiveTab(t.dataset.filter); renderAll(); }
+    });
+    on("searchQueue", "input", e => { query = e.target.value; currentPage = 1; renderAll(); });
+    on("sortQueue", "change", e => { sortKey = e.target.value; currentPage = 1; renderAll(); });
+    on("btnClearFilters", "click", () => { query = ""; if ($("searchQueue")) $("searchQueue").value = ""; setActiveTab("all"); renderAll(); });
+
+    on("pageSizeSelect", "change", e => {
+      pageSize = Number(e.target.value) || 25;
+      currentPage = 1;
+      renderAll();
+    });
+    on("btnPrevPage", "click", () => {
+      if (currentPage > 1) { currentPage--; renderAll(); }
+    });
+    on("btnNextPage", "click", () => {
+      currentPage++;
+      renderAll();
+    });
+
+    // Row Actions
+    const delegate = async e => {
+      const btn = e.target.closest("[data-action]");
+      if (!btn) return;
+      const id = btn.dataset.id;
+      const b = buildings.find(x => x.buildingId === id);
+      if (!b) return;
+
+      if (btn.dataset.action === "dispatch") openDispatchModal(id);
+      else if (btn.dataset.action === "audit") openAudit(id);
+      else if (btn.dataset.action === "edit") { startEdit(id); switchView("simulator"); }
+      else if (btn.dataset.action === "scan") {
+        if (b.photoDataUrl) processPhoto(b.photoDataUrl, null);
+        switchView("scanner");
+      }
+      else if (btn.dataset.action === "photo") { if (b.photoDataUrl) openPhotoModal(b.photoDataUrl, b.name); }
+      else if (btn.dataset.action === "delete") {
+        if (await confirmDialog("Delete " + b.buildingId + "?", `"${b.name}" will be removed from the registry.`, "Delete")) {
+          buildings = buildings.filter(x => x.buildingId !== id);
+          if (editingId === id) resetForm();
+          saveStore();
+          renderAll();
+          toast(b.buildingId + " deleted.", "success");
+        }
+      }
+    };
+    $("queueBody").addEventListener("click", delegate);
+    $("auditContent").addEventListener("click", delegate);
+    $("btnPrint").addEventListener("click", printNotice);
+  }
+
+  /* ======================================================================
+   * Initialisation
+   * ==================================================================== */
+  function init() {
+    applyTheme(currentTheme);
+    buildings = loadStore();
+    dispatches = loadDispatches();
+    wireEvents();
+
+    // Initialize desktop sidebar preference (default to sidebar on desktop screens)
+    const savedSidebar = localStorage.getItem("app_desktop_sidebar_mode");
+    const isDesktopSidebar = savedSidebar ? savedSidebar === "sidebar" : window.innerWidth >= 1024;
+    const shell = $("appShell");
+    if (shell) shell.classList.toggle("sidebar-active", isDesktopSidebar);
+
+    resetForm();
+    renderAll();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();

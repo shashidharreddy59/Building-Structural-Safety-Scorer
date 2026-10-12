@@ -20,7 +20,10 @@ class Building {
     floors = 1,
     occupancyType = "Residential",
     photoDataUrl = null,
-    visionAnalysis = null
+    visionAnalysis = null,
+    dispatchStatus = "NONE",
+    dispatchDetails = null,
+    createdAt = null
   }) {
     this.buildingId = String(buildingId || "").trim();
     this.name = String(name || "").trim();
@@ -34,7 +37,9 @@ class Building {
     this.occupancyType = String(occupancyType || "Residential").trim();
     this.photoDataUrl = photoDataUrl || null;
     this.visionAnalysis = visionAnalysis || null;
-    this.createdAt = new Date().toISOString();
+    this.dispatchStatus = String(dispatchStatus || "NONE"); // 'NONE' | 'DISPATCHED'
+    this.dispatchDetails = dispatchDetails || null;
+    this.createdAt = createdAt || new Date().toISOString();
   }
 }
 
@@ -56,6 +61,10 @@ class SafetyScoreResult {
     this.riskLevel = "LOW"; // 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
     this.grade = "A"; // 'A' | 'B' | 'C' | 'D' | 'F'
     this.requiresUrgentInspection = false;
+    this.isCritical = false;
+    this.hazardFlag = "SOUND"; // '🚩 CRITICAL HAZARD' | '⚠️ HIGH RISK' | 'MODERATE' | 'SOUND'
+    this.hazardFlagReason = "";
+    this.dueInDays = 365;
     this.findings = [];
     this.recommendedActions = [];
   }
@@ -71,32 +80,34 @@ class SafetyScoreResult {
     // Floor score at 0.0, cap at 100.0
     this.totalScore = Math.max(0.0, Math.min(100.0, Math.round(this.totalScore * 10) / 10));
 
-    // Assign Risk Level and Grades
-    if (this.totalScore >= 80) {
+    // STRICT USER CRITERIA:
+    // Above 75 is SAFE (Sound / Low risk, NEVER red flagged)
+    // Between 75-50 is MEDIUM (Moderate risk)
+    // Below 50 is HIGHRISK (Critical Hazard - Red Flagged)
+    if (this.totalScore >= 75.0) {
       this.riskLevel = "LOW";
       this.grade = this.totalScore >= 90 ? "A" : "B";
+      this.isCritical = false;
       this.requiresUrgentInspection = false;
-    } else if (this.totalScore >= 60) {
+      this.hazardFlag = "SOUND";
+      this.hazardFlagReason = "Score in the safe region (≥ 75.0). Structural integrity verified.";
+      this.dueInDays = 365;
+    } else if (this.totalScore >= 50.0) {
       this.riskLevel = "MEDIUM";
       this.grade = "C";
+      this.isCritical = false;
       this.requiresUrgentInspection = false;
-    } else if (this.totalScore >= 40) {
-      this.riskLevel = "HIGH";
-      this.grade = "D";
-      this.requiresUrgentInspection = true;
+      this.hazardFlag = "MODERATE RISK";
+      this.hazardFlagReason = "Score in the moderate region (50.0–74.9). Monitored on 60-day cycle.";
+      this.dueInDays = 60;
     } else {
-      this.riskLevel = "CRITICAL";
-      this.grade = "F";
+      this.riskLevel = this.totalScore < 30 ? "CRITICAL" : "HIGH";
+      this.grade = this.totalScore < 30 ? "F" : "D";
+      this.isCritical = true;
       this.requiresUrgentInspection = true;
-    }
-
-    // Override flag: acute danger triggers
-    if (this.building.maintenanceScore <= 2) {
-      this.requiresUrgentInspection = true;
-      if (this.riskLevel === "LOW") this.riskLevel = "MEDIUM";
-    }
-    if (this.building.ageYears >= 55 && !this.building.codeCompliant) {
-      this.requiresUrgentInspection = true;
+      this.hazardFlag = "🚩 CRITICAL HAZARD";
+      this.hazardFlagReason = `Score below 50.0 (${this.totalScore.toFixed(1)}/100). Urgent structural hazard requiring mandatory officer dispatch.`;
+      this.dueInDays = this.totalScore < 30 ? 1 : 14;
     }
 
     // Formulate Municipal Action Recommendations

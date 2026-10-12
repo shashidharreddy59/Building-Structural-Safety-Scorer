@@ -5,331 +5,598 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
   <meta name="referrer" content="no-referrer">
-  <meta name="description" content="Municipal structural safety evaluation tool using rule-based OOP inspection checklist and computer vision to prioritize hazardous buildings.">
+  <meta name="description" content="Municipal structural safety evaluation tool: rule-based OOP inspection checklist, computer vision telemetry, and field officer emergency dispatch.">
   <title>Building Structural Safety Scorer — Municipal Risk Prioritization System</title>
   
   <!-- Tailwind CSS & Lucide Icons -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   
-  <!-- Custom Stylesheet & Favicon -->
+  <!-- Custom Fonts & Stylesheet -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230284c7'><path d='M3 21h18M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16M9 7h2v2H9zm4 0h2v2h-2zm-4 4h2v2H9zm4 0h2v2h-2zm-4 4h2v2H9zm4 0h2v2h-2z'/></svg>">
   <link rel="stylesheet" href="css/styles.css">
 </head>
-<body class="min-h-screen flex flex-col font-sans antialiased selection:bg-sky-500 selection:text-white">
+<body class="min-h-screen flex flex-col font-sans antialiased bg-slate-950 text-slate-100 selection:bg-sky-500 selection:text-white">
 
-  <!-- Application Header -->
-  <header class="glass-nav text-white border-b border-slate-800/80 shadow-lg sticky top-0 z-40">
-    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-      
-      <!-- Brand & Title -->
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500/20 to-sky-600/30 border border-sky-400/40 flex items-center justify-center text-sky-400 shadow-inner">
-          <i data-lucide="building-2" class="w-5 h-5"></i>
+  <!-- ============================== APP SHELL LAYOUT ============================== -->
+  <div id="appShell" class="app-shell sidebar-active flex min-h-screen w-full">
+
+    <!-- Mobile / Drawer Backdrop for Left Sidebar -->
+    <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+
+    <!-- ============================== NEW DESKTOP LEFT SIDEBAR ============================== -->
+    <aside id="desktopSidebar" class="desktop-sidebar no-print flex flex-col justify-between" aria-label="Desktop Navigation & Executive KPIs">
+      <!-- SIDEBAR SCROLLABLE CONTENT -->
+      <div class="p-3.5 space-y-3.5 overflow-y-auto flex-1">
+        
+        <!-- Brand Crest in Sidebar -->
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800/80">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20 ring-1 ring-sky-400/30">
+              <i data-lucide="building-2" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <div class="text-xs font-black tracking-tight font-heading text-white flex items-center gap-1.5">
+                <span>Building Scorer</span>
+                <span class="bg-sky-500/20 text-sky-300 text-[9px] font-mono px-1.5 py-0.2 rounded border border-sky-400/30">#113</span>
+              </div>
+              <div class="text-[10px] text-slate-400 font-medium">Municipal Safety Console</div>
+            </div>
+          </div>
+          <button id="btnMinimizeSidebar" type="button" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800/80 transition flex items-center justify-center group" title="Close Sidebar (Three Bars ☰)" aria-label="Close Sidebar">
+            <i data-lucide="menu" class="w-4 h-4 text-sky-400 group-hover:scale-110 transition-transform"></i>
+          </button>
+        </div>
+
+        <!-- Primary Action: New Assessment -->
+        <button id="btnSidebarNewBuilding" type="button" class="btn-lift btn-primary-sm w-full py-2 px-3 text-xs font-bold flex items-center justify-center gap-2 shadow-md">
+          <i data-lucide="plus-circle" class="w-4 h-4"></i>
+          <span>+ New Assessment</span>
+        </button>
+
+        <!-- WORKSPACE FEATURES NAVIGATION (All 6 new added features) -->
+        <div class="space-y-1">
+          <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 pt-0.5 font-heading">
+            Municipal Workspaces
+          </div>
+          <nav id="sidebarNavTabs" class="space-y-0.5" role="tablist">
+            <button type="button" data-nav-view="queue" class="sidebar-nav-tab active w-full" role="tab" aria-selected="true">
+              <i data-lucide="list-ordered" class="w-4 h-4"></i>
+              <span class="flex-1 text-left">Inspection Queue</span>
+              <span id="sidebarNavQueueBadge" class="nav-counter-badge">1,000</span>
+            </button>
+            <button type="button" data-nav-view="simulator" class="sidebar-nav-tab w-full" role="tab" aria-selected="false">
+              <i data-lucide="calculator" class="w-4 h-4"></i>
+              <span class="flex-1 text-left">Live Assessment Studio</span>
+            </button>
+            <button type="button" data-nav-view="scanner" class="sidebar-nav-tab w-full" role="tab" aria-selected="false">
+              <i data-lucide="camera" class="w-4 h-4"></i>
+              <span class="flex-1 text-left">AI Elevation Scanner</span>
+              <span class="nav-pulse-badge">Vision Lab</span>
+            </button>
+            <button type="button" data-nav-view="deployments" class="sidebar-nav-tab w-full" role="tab" aria-selected="false">
+              <i data-lucide="shield-alert" class="w-4 h-4"></i>
+              <span class="flex-1 text-left">Officer Operations</span>
+              <span id="sidebarNavDispatchBadge" class="nav-counter-badge bg-indigo-600 text-white font-bold">0</span>
+            </button>
+            <button type="button" data-nav-view="rules" class="sidebar-nav-tab w-full" role="tab" aria-selected="false">
+              <i data-lucide="list-checks" class="w-4 h-4"></i>
+              <span class="flex-1 text-left">Strategy Rules</span>
+            </button>
+            <button type="button" data-nav-view="analytics" class="sidebar-nav-tab w-full" role="tab" aria-selected="false">
+              <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+              <span class="flex-1 text-left">Ward Analytics</span>
+            </button>
+          </nav>
+        </div>
+
+        <!-- ============================== THE 2ND IMAGE: 5 KPI CARDS IN LEFT SIDEBAR ============================== -->
+        <div class="space-y-2 pt-2 border-t border-slate-800/80">
+          <div class="flex items-center justify-between px-2">
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-heading">
+              Executive KPI Overview
+            </span>
+            <span class="text-[9px] font-mono text-sky-400 bg-sky-500/10 px-1.5 py-0.2 rounded border border-sky-400/20">Live</span>
+          </div>
+
+          <div class="space-y-1.5">
+            <!-- 1. Monitored -->
+            <div id="sidebarKpiCardTotal" class="sidebar-kpi-card group cursor-pointer" title="Click to view all monitored buildings in queue">
+              <div class="h-0.5 w-full bg-gradient-to-r from-sky-400 to-indigo-500"></div>
+              <div class="p-2.5">
+                <div class="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400 font-heading">
+                  <span>Monitored</span>
+                  <div class="p-1 bg-slate-800 rounded group-hover:bg-sky-500/20 group-hover:text-sky-300 transition">
+                    <i data-lucide="landmark" class="w-3 h-3 text-slate-300"></i>
+                  </div>
+                </div>
+                <div id="sidebarKpiTotal" class="text-xl font-black text-white mt-1 font-heading tracking-tight">0</div>
+                <div class="text-[9px] text-slate-400 mt-0.5">Total internal registry</div>
+              </div>
+            </div>
+
+            <!-- 2. Red Flagged -->
+            <div id="sidebarKpiCardFlagged" class="sidebar-kpi-card group cursor-pointer" title="Click to filter critical red-flagged structures">
+              <div class="h-0.5 w-full bg-gradient-to-r from-rose-500 to-red-500"></div>
+              <div class="p-2.5">
+                <div class="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-rose-400 font-heading">
+                  <span>🚩 Red Flagged</span>
+                  <div class="p-1 bg-rose-500/10 rounded text-rose-400">
+                    <i data-lucide="flag" class="w-3 h-3"></i>
+                  </div>
+                </div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <span id="sidebarKpiFlagged" class="bg-rose-600 text-white text-base font-black rounded px-2 py-0.2 shadow-sm font-heading">0</span>
+                  <span class="text-[9px] text-rose-400 font-bold uppercase font-mono">Critical</span>
+                </div>
+                <div class="text-[9px] text-slate-400 mt-0.5">Imminent collapse conditions (&lt;50)</div>
+              </div>
+            </div>
+
+            <!-- 3. Officers Sent -->
+            <div id="sidebarKpiCardDispatched" class="sidebar-kpi-card group cursor-pointer" title="Click to view officer deployment operations">
+              <div class="h-0.5 w-full bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+              <div class="p-2.5">
+                <div class="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-indigo-300 font-heading">
+                  <span>Officers Sent</span>
+                  <div class="p-1 bg-indigo-500/20 rounded text-indigo-400">
+                    <i data-lucide="shield-check" class="w-3 h-3"></i>
+                  </div>
+                </div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <div id="sidebarKpiDispatched" class="text-xl font-black text-indigo-200 font-heading tracking-tight">0</div>
+                  <span id="sidebarKpiPendingDispatch" class="text-[9px] font-mono font-bold text-amber-400">(0 critical)</span>
+                </div>
+                <div class="text-[9px] text-slate-400 mt-0.5">Active on-site deployments</div>
+              </div>
+            </div>
+
+            <!-- 4. Avg Safety Score -->
+            <div id="sidebarKpiCardAvg" class="sidebar-kpi-card group cursor-pointer" title="Click to view ward resilience analytics">
+              <div class="h-0.5 w-full bg-gradient-to-r from-blue-500 to-cyan-500"></div>
+              <div class="p-2.5">
+                <div class="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400 font-heading">
+                  <span>Avg Safety Score</span>
+                  <div class="p-1 bg-sky-500/20 rounded text-sky-400">
+                    <i data-lucide="gauge" class="w-3 h-3"></i>
+                  </div>
+                </div>
+                <div class="flex items-baseline gap-1.5 mt-1">
+                  <div id="sidebarKpiAvg" class="text-xl font-black text-white font-heading tracking-tight">0.0</div>
+                  <span class="text-[9px] text-slate-400 font-semibold font-mono">/ 100</span>
+                </div>
+                <div class="text-[9px] text-slate-400 mt-0.5">Ward resilience index</div>
+              </div>
+            </div>
+
+            <!-- 5. Code Compliance -->
+            <div id="sidebarKpiCardComp" class="sidebar-kpi-card group cursor-pointer" title="Click to view strategy rules and compliance codes">
+              <div class="h-0.5 w-full bg-gradient-to-r from-emerald-500 to-teal-500"></div>
+              <div class="p-2.5">
+                <div class="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400 font-heading">
+                  <span>Code Compliance</span>
+                  <div class="p-1 bg-emerald-500/20 rounded text-emerald-400">
+                    <i data-lucide="shield" class="w-3 h-3"></i>
+                  </div>
+                </div>
+                <div id="sidebarKpiComp" class="text-xl font-black text-white mt-1 font-heading tracking-tight">0%</div>
+                <div class="text-[9px] text-slate-400 mt-0.5">NBC statutory standard</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- SIDEBAR FOOTER / CONTROLS -->
+      <div class="p-3 border-t border-slate-800/80 bg-slate-950/80 space-y-2">
+        <div class="grid grid-cols-2 gap-1.5">
+          <button id="btnSidebarThemeToggle" type="button" class="sidebar-tool-btn" title="Toggle Light/Dark Theme">
+            <i data-lucide="sun" class="w-3.5 h-3.5 text-amber-400"></i>
+            <span>Theme</span>
+          </button>
+          <button id="btnSidebarExportCsv" type="button" class="sidebar-tool-btn" title="Export Dataset CSV">
+            <i data-lucide="download" class="w-3.5 h-3.5 text-sky-400"></i>
+            <span>Export</span>
+          </button>
+        </div>
+        <button id="btnSidebarLayoutToggle" type="button" class="w-full text-[10px] font-mono text-slate-400 hover:text-white py-1.5 px-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 flex items-center justify-center gap-1.5 transition" title="Switch layout to top navigation bar">
+          <i data-lucide="layout-template" class="w-3 h-3 text-sky-400"></i>
+          <span>Switch to Top-Bar Mode</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ============================== MAIN CONTENT WRAPPER ============================== -->
+    <div id="mainContentWrapper" class="flex-1 flex flex-col min-w-0">
+
+      <!-- ============================== APPLICATION HEADER ============================== -->
+      <header class="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 shadow-xl">
+        <div class="max-w-[1560px] mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          
+          <!-- Brand & Title with Three Bars Sidebar Trigger -->
+          <div class="flex items-center gap-2.5 sm:gap-3">
+            <!-- THREE BARS (HAMBURGER) ICON TO ACCESS SIDEBAR -->
+            <button id="btnSidebarHamburger" type="button" class="btn-lift flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-sky-400 border border-slate-700/80 hover:border-sky-500/50 shadow-md transition group focus:outline-none focus:ring-2 focus:ring-sky-500/40" title="Access Workspaces & KPIs (Three Bars ☰)" aria-label="Toggle Sidebar Menu">
+              <i data-lucide="menu" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
+            </button>
+
+            <div class="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/20 ring-1 ring-sky-400/30 flex-shrink-0">
+              <i data-lucide="building-2" class="w-5 h-5 sm:w-6 sm:h-6"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <h1 class="text-base sm:text-lg font-extrabold tracking-tight font-heading text-white">
+                  Building Structural Safety Scorer
+                </h1>
+                <span class="bg-sky-500/20 text-sky-300 text-[10px] font-mono px-2 py-0.5 rounded-full border border-sky-400/30 font-bold">
+                  PS #113
+                </span>
+                <span class="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-300 text-[10px] font-mono px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Live Strategy Engine Active
+                </span>
+              </div>
+              <p class="text-xs text-slate-400">Municipal Structural Safety &amp; Risk Prioritization System</p>
+            </div>
+          </div>
+
+          <!-- Quick Actions & Side Drawer Trigger -->
+          <div class="flex items-center flex-wrap gap-2">
+            <!-- Side Option: Camera & Elevation Scanner Trigger with Shimmer and Neon Glow -->
+            <button id="btnOpenSideScanner" type="button" class="btn-lift btn-shimmer btn-glow-sky flex items-center gap-1.5 sm:gap-2 text-xs bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold px-3 sm:px-4 py-2 rounded-xl shadow-lg transition border border-sky-400/50" title="Open Elevation Camera & Facade Scanner Side Panel">
+              <i data-lucide="scan-line" class="w-4 h-4 text-sky-200 animate-pulse"></i>
+              <span class="hidden sm:inline">📷 Scan Elevation (Side Panel)</span>
+              <span class="sm:hidden font-semibold">📷 Scan</span>
+            </button>
+
+            <!-- Officer Dispatch Registry Log Button -->
+            <button id="btnOpenDispatchLog" type="button" class="btn-lift flex items-center gap-1.5 sm:gap-2 text-xs bg-slate-900 hover:bg-slate-800 text-slate-200 font-semibold px-2.5 sm:px-3.5 py-2 rounded-xl border border-slate-700/80 shadow-sm transition" title="View Active Field Officer Deployment Registry">
+              <i data-lucide="shield-alert" class="w-4 h-4 text-indigo-400"></i>
+              <span class="hidden md:inline">Officer Deployments</span>
+              <span class="md:hidden">Officers</span>
+              <span id="headerDispatchCount" class="bg-indigo-600 text-white font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold">0</span>
+            </button>
+
+            <!-- Theme Toggle: Light / Dark Mode -->
+            <button id="btnThemeToggle" type="button" class="btn-lift btn-dark flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold" title="Toggle Light / Dark Mode">
+              <i id="themeIcon" data-lucide="sun" class="w-3.5 h-3.5 text-amber-400"></i>
+              <span id="themeLabel" class="hidden sm:inline">Light Mode</span>
+            </button>
+
+            <button id="btnExportCsv" type="button" class="btn-dark px-2.5 sm:px-3" title="Export CSV"><i data-lucide="download" class="w-3.5 h-3.5 text-slate-300"></i><span class="hidden md:inline">CSV</span></button>
+            <button id="btnRules" type="button" class="btn-dark px-2.5 sm:px-3" title="Scoring Rules"><i data-lucide="list-checks" class="w-3.5 h-3.5 text-slate-300"></i><span class="hidden md:inline">Rules</span></button>
+            <button id="btnResetData" type="button" class="btn-dark px-2.5 sm:px-3" title="Reset Data"><i data-lucide="rotate-ccw" class="w-3.5 h-3.5 text-slate-400"></i></button>
+          </div>
+
+        </div>
+      </header>
+
+  <!-- ============================== PRIMARY WORKSPACE NAVIGATION ============================== -->
+  <nav id="mainNavBar" class="bg-slate-950/85 backdrop-blur-md border-b border-slate-800/80 sticky top-[61px] z-30 px-4 py-2 transition-colors" aria-label="Main Navigation">
+    <div class="max-w-[1560px] mx-auto flex items-center justify-between gap-3 overflow-x-auto touch-scroll">
+      <div class="flex items-center gap-1 sm:gap-2" id="mainNavTabs" role="tablist">
+        <button type="button" data-nav-view="queue" class="main-nav-tab active" role="tab" aria-selected="true">
+          <i data-lucide="list-ordered" class="w-4 h-4"></i>
+          <span>Inspection Queue</span>
+          <span id="navQueueBadge" class="nav-counter-badge">1,000</span>
+        </button>
+        <button type="button" data-nav-view="simulator" class="main-nav-tab" role="tab" aria-selected="false">
+          <i data-lucide="calculator" class="w-4 h-4"></i>
+          <span>Live Assessment Studio</span>
+        </button>
+        <button type="button" data-nav-view="scanner" class="main-nav-tab" role="tab" aria-selected="false">
+          <i data-lucide="camera" class="w-4 h-4"></i>
+          <span>AI Elevation Scanner</span>
+          <span class="nav-pulse-badge">Vision Lab</span>
+        </button>
+        <button type="button" data-nav-view="deployments" class="main-nav-tab" role="tab" aria-selected="false">
+          <i data-lucide="shield-alert" class="w-4 h-4"></i>
+          <span>Officer Operations</span>
+          <span id="navDispatchBadge" class="nav-counter-badge bg-indigo-600 text-white font-bold">0</span>
+        </button>
+        <button type="button" data-nav-view="rules" class="main-nav-tab" role="tab" aria-selected="false">
+          <i data-lucide="list-checks" class="w-4 h-4"></i>
+          <span>Strategy Rules</span>
+        </button>
+        <button type="button" data-nav-view="analytics" class="main-nav-tab" role="tab" aria-selected="false">
+          <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+          <span>Ward Analytics</span>
+        </button>
+      </div>
+
+      <!-- Quick Action: Direct New Assessment Trigger -->
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button id="btnQuickNewBuilding" type="button" class="btn-lift btn-primary-sm py-1.5 px-3 text-xs font-bold" title="Open Assessment Studio to evaluate a new structure">
+          <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">New Assessment</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ============================== MAIN WORKSPACE ============================== -->
+  <main class="max-w-[1560px] mx-auto w-full px-4 py-6 flex-1 space-y-6">
+
+    <!-- Municipal Hazard Alert & Batch Officer Dispatch Banner -->
+    <div id="hazardAlertBanner" class="bg-gradient-to-r from-rose-950/40 via-slate-900/90 to-slate-950 border border-rose-500/30 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div class="flex items-center gap-3.5">
+        <div class="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 flex-shrink-0">
+          <i data-lucide="alert-triangle" class="w-5 h-5"></i>
         </div>
         <div>
-          <div class="flex items-center gap-2">
-            <h1 class="text-base sm:text-lg font-extrabold tracking-tight font-heading text-white">
-              Building Structural Safety Scorer
-            </h1>
-            <span class="bg-sky-500/20 text-sky-300 text-[10px] font-mono px-2 py-0.5 rounded-full border border-sky-400/30 font-semibold">
-              PS #113
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs font-bold text-white tracking-wide uppercase font-heading flex items-center gap-2">
+              <span>Municipal Hazard Monitoring</span>
+              <span id="criticalCountBadge" class="red-flag-badge">🚩 0 Red Flagged</span>
             </span>
-            <span class="hidden md:inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-300 text-[10px] font-mono px-2 py-0.5 rounded-full border border-emerald-500/30">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              Live Engine Active
-            </span>
+            <span class="text-slate-500 text-xs hidden sm:inline">&bull;</span>
+            <span id="dispatchSummaryText" class="text-xs text-slate-300">Evaluating building registry for critical structural hazards...</span>
           </div>
-          <p class="text-xs text-slate-300">Municipal Structural Safety &amp; Risk Prioritization System</p>
+          <p class="text-[11px] text-slate-400 mt-0.5">Structures scoring below 50 exhibit severe collapse hazard and require mandatory field officer emergency dispatch.</p>
         </div>
       </div>
 
-      <!-- Quick Action Buttons -->
-      <div class="flex items-center gap-1.5 sm:gap-2">
-        <button id="btnExportCsv" type="button" class="btn-lift flex items-center gap-1.5 text-xs bg-slate-800/90 hover:bg-slate-700 border border-slate-700/80 px-2.5 sm:px-3 py-2 rounded-lg text-slate-200 transition font-medium shadow-sm" title="Export current prioritized inspection queue to CSV">
-          <i data-lucide="download" class="w-3.5 h-3.5 text-sky-400"></i>
-          <span class="hidden sm:inline">Export Queue (CSV)</span>
-          <span class="sm:hidden font-mono">CSV</span>
-        </button>
-
-        <button id="btnResetData" type="button" class="btn-lift flex items-center gap-1 text-xs bg-slate-800/90 hover:bg-slate-700 border border-slate-700/80 px-2 sm:px-2.5 py-2 rounded-lg text-slate-300 transition font-medium shadow-sm" title="Restore default 5 benchmark structures">
-          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 text-slate-400"></i>
-          <span class="hidden sm:inline">Reset</span>
+      <div class="flex items-center gap-2 w-full md:w-auto justify-end">
+        <button id="btnBatchDispatch" type="button" class="btn-lift btn-shimmer flex items-center gap-2 text-xs bg-rose-700/90 hover:bg-rose-600 text-white font-bold px-4 py-2.5 rounded-xl shadow-md transition border border-rose-400/40 font-heading" title="Send municipal field officers to all critical red-flagged sites">
+          <i data-lucide="siren" class="w-4 h-4 text-white"></i>
+          <span>Send Officers to All Critical Sites (<span id="batchCountBadge">0</span>)</span>
         </button>
       </div>
-
     </div>
-  </header>
 
-  <!-- Main Workspace -->
-  <main class="max-w-7xl mx-auto w-full px-4 py-6 flex-1 space-y-6">
-
-    <!-- KPI Metric Cards -->
-    <section class="grid grid-cols-2 lg:grid-cols-4 gap-4" aria-label="Key Performance Indicators">
+    <!-- KPI Metric Ribbon -->
+    <section id="topKpiRibbon" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5" aria-label="Key Performance Indicators">
       
       <!-- Total Monitored -->
-      <div id="kpiCardTotal" class="card-focus-glow bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm cursor-pointer relative overflow-hidden group" title="Click to show all buildings">
+      <div id="kpiCardTotal" class="card-focus-glow bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm cursor-pointer relative overflow-hidden group" title="Click to view all buildings in queue">
         <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-400 to-indigo-500"></div>
-        <div class="flex items-center justify-between text-slate-500 text-xs font-bold uppercase tracking-wider">
-          <span>Buildings Monitored</span>
-          <div class="p-2 bg-slate-100 rounded-xl text-slate-600 group-hover:bg-sky-50 group-hover:text-sky-600 transition"><i data-lucide="landmark" class="w-4 h-4"></i></div>
+        <div class="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider font-heading">
+          <span>Monitored</span>
+          <div class="p-1.5 bg-slate-800 rounded-lg text-slate-300 group-hover:bg-sky-500/20 group-hover:text-sky-300 transition"><i data-lucide="landmark" class="w-3.5 h-3.5"></i></div>
         </div>
-        <div id="kpiTotal" class="text-3xl font-black text-slate-900 mt-2 font-heading tracking-tight">0</div>
-        <div class="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
-          <span>Total registry portfolio</span>
-          <i data-lucide="arrow-right" class="w-3 h-3 text-slate-300 group-hover:translate-x-0.5 transition"></i>
-        </div>
+        <div id="kpiTotal" class="text-2xl sm:text-3xl font-black text-white mt-2 font-heading tracking-tight">0</div>
+        <div class="text-[10px] text-slate-400 mt-1">Total internal registry</div>
       </div>
 
-      <!-- Urgent Inspections -->
-      <div id="kpiCardUrgent" class="card-focus-glow bg-gradient-to-br from-white via-white to-red-50/40 border border-red-200/90 rounded-2xl p-4 shadow-sm cursor-pointer relative overflow-hidden group" title="Click to filter urgent structures only">
-        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 to-rose-600"></div>
-        <div class="flex items-center justify-between text-red-600 text-xs font-bold uppercase tracking-wider">
-          <span>Urgent Inspections</span>
-          <div class="p-2 bg-red-100 rounded-xl text-red-600 group-hover:bg-red-200 transition"><i data-lucide="siren" class="w-4 h-4"></i></div>
+      <!-- Critical Red-Flagged -->
+      <div id="kpiCardFlagged" class="card-focus-glow bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm cursor-pointer relative overflow-hidden group" title="Click to filter critical red-flagged structures">
+        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 to-red-500"></div>
+        <div class="flex items-center justify-between text-rose-400 text-xs font-bold uppercase tracking-wider font-heading">
+          <span>🚩 Red Flagged</span>
+          <div class="p-1.5 bg-rose-500/10 rounded-lg text-rose-400"><i data-lucide="flag" class="w-3.5 h-3.5"></i></div>
         </div>
-        <div class="mt-2 flex items-baseline gap-2">
-          <span id="kpiUrgent" class="inline-block bg-red-600 text-white text-2xl font-black rounded-lg px-2.5 py-0.5 shadow-sm badge-urgent-pulse font-heading">0</span>
-          <span class="text-xs text-red-700 font-bold uppercase tracking-wide">Action Needed</span>
+        <div class="mt-2 flex items-baseline gap-1.5">
+          <span id="kpiFlagged" class="inline-block bg-rose-600 text-white text-xl sm:text-2xl font-black rounded-lg px-2.5 py-0.5 shadow-sm font-heading">0</span>
+          <span class="text-[10px] text-rose-400 font-bold uppercase font-mono">Critical</span>
         </div>
-        <div class="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
-          <span>High &amp; Critical risk structures</span>
-          <i data-lucide="arrow-right" class="w-3 h-3 text-red-400 group-hover:translate-x-0.5 transition"></i>
+        <div class="text-[10px] text-slate-400 mt-1">Imminent collapse conditions (&lt;50)</div>
+      </div>
+
+      <!-- Officers Dispatched -->
+      <div id="kpiCardDispatched" class="card-focus-glow bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm cursor-pointer relative overflow-hidden group" title="Click to view officer deployment operations">
+        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+        <div class="flex items-center justify-between text-indigo-300 text-xs font-bold uppercase tracking-wider font-heading">
+          <span>Officers Sent</span>
+          <div class="p-1.5 bg-indigo-500/20 rounded-lg text-indigo-400"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i></div>
         </div>
+        <div class="mt-2 flex items-baseline gap-1.5">
+          <div id="kpiDispatched" class="text-2xl sm:text-3xl font-black text-indigo-200 font-heading tracking-tight">0</div>
+          <span id="kpiPendingDispatch" class="text-[10px] font-mono font-bold text-amber-400">(0 pending)</span>
+        </div>
+        <div class="text-[10px] text-slate-400 mt-1">Active on-site deployments</div>
       </div>
 
       <!-- Average Safety Score -->
-      <div class="card-focus-glow bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+      <div class="card-focus-glow bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden">
         <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-cyan-500"></div>
-        <div class="flex items-center justify-between text-slate-500 text-xs font-bold uppercase tracking-wider">
-          <span>Avg Municipal Score</span>
-          <div class="p-2 bg-sky-50 rounded-xl text-sky-600"><i data-lucide="gauge" class="w-4 h-4"></i></div>
+        <div class="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider font-heading">
+          <span>Avg Safety Score</span>
+          <div class="p-1.5 bg-sky-500/20 rounded-lg text-sky-400"><i data-lucide="gauge" class="w-3.5 h-3.5"></i></div>
         </div>
-        <div class="flex items-baseline gap-2 mt-2">
-          <div id="kpiAvg" class="text-3xl font-black text-slate-900 font-heading tracking-tight">0.0</div>
-          <span class="text-xs text-slate-400 font-semibold font-mono">/ 100</span>
+        <div class="flex items-baseline gap-1.5 mt-2">
+          <div id="kpiAvg" class="text-2xl sm:text-3xl font-black text-white font-heading tracking-tight">0.0</div>
+          <span class="text-[10px] text-slate-400 font-semibold font-mono">/ 100</span>
         </div>
-        <div class="text-[11px] text-slate-400 mt-1">Ward safety resilience index</div>
+        <div class="text-[10px] text-slate-400 mt-1">Ward resilience index</div>
       </div>
 
-      <!-- Code Compliance Rate -->
-      <div class="card-focus-glow bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+      <!-- Code Compliance -->
+      <div class="card-focus-glow bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden col-span-2 md:col-span-1">
         <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
-        <div class="flex items-center justify-between text-slate-500 text-xs font-bold uppercase tracking-wider">
+        <div class="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider font-heading">
           <span>Code Compliance</span>
-          <div class="p-2 bg-emerald-50 rounded-xl text-emerald-600"><i data-lucide="shield-check" class="w-4 h-4"></i></div>
+          <div class="p-1.5 bg-emerald-500/20 rounded-lg text-emerald-400"><i data-lucide="shield" class="w-3.5 h-3.5"></i></div>
         </div>
-        <div id="kpiComp" class="text-3xl font-black text-slate-900 mt-2 font-heading tracking-tight">0%</div>
-        <div class="text-[11px] text-slate-400 mt-1">National Building Code conformity</div>
+        <div id="kpiComp" class="text-2xl sm:text-3xl font-black text-white mt-2 font-heading tracking-tight">0%</div>
+        <div class="text-[10px] text-slate-400 mt-1">NBC statutory standard</div>
       </div>
 
     </section>
 
-    <!-- Mobile View Switcher (Visible on mobile screens < lg) -->
-    <div class="lg:hidden flex items-center bg-slate-200/90 p-1 rounded-xl text-xs font-semibold gap-1" id="mobileViewTabs" role="tablist">
-      <button type="button" id="tabBtnForm" class="flex-1 py-2.5 rounded-lg bg-slate-900 text-white shadow-xs transition flex items-center justify-center gap-1.5 font-heading">
-        <i data-lucide="scan-line" class="w-3.5 h-3.5 text-sky-400"></i>
-        <span>Assess &amp; Scan</span>
-      </button>
-      <button type="button" id="tabBtnQueue" class="flex-1 py-2.5 rounded-lg text-slate-700 hover:text-slate-900 transition flex items-center justify-center gap-1.5 font-heading">
-        <i data-lucide="list-ordered" class="w-3.5 h-3.5 text-sky-600"></i>
-        <span>Priority Queue</span>
-        <span id="mobileQueueCountBadge" class="bg-slate-300 text-slate-800 text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold">5</span>
-      </button>
-    </div>
-
-    <!-- Content Workspace Grid -->
-    <div class="grid lg:grid-cols-12 gap-6 items-start">
-
-      <!-- Left Column: Assessment Input & Photo Ingestion (5 cols) -->
-      <aside id="panelForm" class="block lg:block lg:col-span-5 space-y-4">
-        <div class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden transition-all">
-          
-          <!-- Collapsible Header -->
-          <div id="formToggleHeader" class="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-slate-900 to-slate-800 text-white font-semibold cursor-pointer select-none">
-            <span class="flex items-center gap-2.5 font-heading text-sm">
-              <i data-lucide="scan-line" class="w-4 h-4 text-sky-400"></i>
-              <span id="formPanelTitle">Assess &amp; Scan Structure</span>
-            </span>
-            <div class="flex items-center gap-2">
-              <span id="editModeIndicator" class="hidden text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded font-mono font-bold">Editing</span>
-              <i data-lucide="chevron-down" id="formToggleChevron" class="w-4 h-4 text-slate-400 transition-transform"></i>
+    <!-- ============================== VIEW 1: PRIORITIZED INSPECTION QUEUE ============================== -->
+    <section id="view-queue" class="app-view-container space-y-4">
+      <div class="bg-slate-900/95 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col">
+        
+        <!-- Table Toolbar -->
+        <div class="p-4 sm:p-5 border-b border-slate-800 bg-slate-950/70 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <h2 class="font-extrabold text-base text-white font-heading flex items-center gap-2">
+                <i data-lucide="list-ordered" class="w-4 h-4 text-sky-400"></i>
+                <span>Prioritized Municipal Inspection Queue</span>
+              </h2>
+              <span id="queueCounterBadge" class="text-xs bg-slate-800 border border-slate-700 text-slate-300 px-2 py-0.5 rounded-full font-mono font-bold">
+                0 Structures
+              </span>
             </div>
+            <p class="text-xs text-slate-400 mt-0.5">Ranked by Highest Risk First &bull; Red-flagged critical hazards (&lt;50) prioritized for emergency officer dispatch.</p>
           </div>
 
-          <!-- Form Content -->
-          <div id="formContentArea" class="p-5 space-y-5">
-
-            <!-- Photo Upload & Computer Vision Box -->
-            <div class="border-2 border-dashed border-sky-300/80 bg-gradient-to-b from-sky-50/60 to-slate-50/40 rounded-2xl p-4 transition-all">
-              <div class="flex items-center justify-between mb-2.5">
-                <span class="text-xs font-bold text-sky-950 flex items-center gap-1.5 font-heading">
-                  <i data-lucide="camera" class="w-4 h-4 text-sky-600"></i>
-                  Building Photo &amp; Structural Inspection
-                </span>
-                <span id="aiStatusBadge" class="bg-sky-100 text-sky-800 border border-sky-200 text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold">Photo Ready</span>
-              </div>
-
-              <!-- Hidden File Input (Strict Accept & Validation) -->
-              <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp" class="hidden">
-              <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
-
-              <!-- Upload Placeholder Area -->
-              <div id="uploadPlaceholder" class="cursor-pointer py-5 px-3 text-center rounded-xl hover:bg-sky-50/80 transition border border-transparent">
-                <div class="w-12 h-12 rounded-2xl bg-sky-100/80 flex items-center justify-center text-sky-600 mx-auto mb-2.5 shadow-sm">
-                  <i data-lucide="upload-cloud" class="w-6 h-6"></i>
-                </div>
-                <p class="text-xs font-bold text-slate-800 font-heading">Upload or Drag Building Facade Photo</p>
-                <p class="text-[11px] text-slate-500 mt-0.5">Scans cracks, material composition, storeys &amp; distress degradation</p>
-                <p class="text-[10px] text-slate-400 mt-0.5">JPEG, PNG, WEBP &bull; Max 10MB</p>
-                
-                <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
-                  <button type="button" id="btnBrowsePhoto" class="btn-lift text-xs bg-sky-600 hover:bg-sky-700 text-white font-semibold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1">
-                    <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
-                    <span>Browse Files</span>
-                  </button>
-                  <button type="button" id="btnOpenWebcam" class="btn-lift text-xs bg-slate-800 hover:bg-slate-700 text-white font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm">
-                    <i data-lucide="camera" class="w-3.5 h-3.5 text-sky-400"></i>
-                    <span>Use Camera</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Canvas & Scanner Preview Container -->
-              <div id="previewContainer" class="hidden relative mt-2">
-                <div class="relative overflow-hidden rounded-xl border border-slate-300 bg-slate-950 max-h-64 flex items-center justify-center shadow-inner">
-                  <canvas id="photoCanvas" class="w-full object-contain max-h-64"></canvas>
-                  <div id="scannerLaser" class="scanner-laser hidden"></div>
-                  <button id="btnRemovePhoto" type="button" class="btn-lift absolute top-2.5 right-2.5 bg-slate-900/80 hover:bg-red-600 text-white rounded-full p-1.5 shadow-md transition" title="Remove photo">
-                    <i data-lucide="x" class="w-3.5 h-3.5"></i>
-                  </button>
-                </div>
-
-                <!-- Rich Structural Telemetry Panel -->
-                <div id="visionTelemetryPanel" class="hidden mt-3 bg-slate-900 text-white rounded-xl p-3.5 space-y-2.5 border border-slate-700/80 shadow-md text-xs">
-                  <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-                    <span class="font-bold flex items-center gap-1.5 text-sky-400 font-heading">
-                      <i data-lucide="scan" class="w-3.5 h-3.5 text-sky-400"></i>
-                      <span>Structural Telemetry &amp; Facade Inspection</span>
-                    </span>
-                    <span id="visionConfidenceBadge" class="text-[10px] font-mono bg-sky-500/20 text-sky-300 border border-sky-400/30 px-2 py-0.5 rounded font-bold">Calibrated Scan</span>
-                  </div>
-                  
-                  <!-- Primary Identified Typology & Name -->
-                  <div>
-                    <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Identified Structure:</div>
-                    <div id="viBuildingName" class="font-bold text-sm text-white mt-0.5 font-heading">Structure Elevation</div>
-                    <div id="viTypology" class="text-[11px] text-sky-300 mt-0.5">Typology Analysis</div>
-                  </div>
-
-                  <!-- Key Attributes Grid -->
-                  <div class="grid grid-cols-3 gap-1.5 text-[11px] text-center pt-0.5">
-                    <div class="bg-slate-800/80 border border-slate-700/60 rounded-lg p-1.5">
-                      <span class="text-[9px] uppercase font-bold text-slate-400 block tracking-wider">Material</span>
-                      <span id="viMaterial" class="font-bold text-amber-300">Brick</span>
-                    </div>
-                    <div class="bg-slate-800/80 border border-slate-700/60 rounded-lg p-1.5">
-                      <span class="text-[9px] uppercase font-bold text-slate-400 block tracking-wider">Storeys</span>
-                      <span id="viFloors" class="font-bold text-sky-300">3 Floors</span>
-                    </div>
-                    <div class="bg-slate-800/80 border border-slate-700/60 rounded-lg p-1.5">
-                      <span class="text-[9px] uppercase font-bold text-slate-400 block tracking-wider">Est. Age</span>
-                      <span id="viAge" class="font-bold text-emerald-300">~25 Yrs</span>
-                    </div>
-                  </div>
-
-                  <!-- Distress & Maintenance Analysis -->
-                  <div id="viDistressAlert" class="p-2.5 rounded-lg bg-red-950/40 border border-red-500/40 text-[11px] flex items-start gap-2">
-                    <i data-lucide="alert-triangle" class="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5"></i>
-                    <div>
-                      <div id="viDistressTitle" class="font-bold text-red-300 font-heading">Structural Distress Analysis</div>
-                      <div id="viDistressDesc" class="text-slate-300 text-[10px] mt-0.5 leading-relaxed">Surface integrity evaluated.</div>
-                    </div>
-                  </div>
-
-                  <!-- Detected Structural Elements -->
-                  <div>
-                    <span class="text-[9px] uppercase font-bold text-slate-400 block mb-1 tracking-wider">Detected Architectural Items:</span>
-                    <div id="viDetectedItems" class="flex flex-wrap gap-1"></div>
-                  </div>
-
-                  <!-- Success Indicator -->
-                  <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-emerald-400 font-medium">
-                    <span class="flex items-center gap-1.5">
-                      <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
-                      <span>Auto-calibrated into assessment checklist</span>
-                    </span>
-                    <span class="text-slate-400 font-mono text-[9px]">Live Synchronized</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 1-Click Preset Samples for Instant Testing -->
-              <div class="mt-3 pt-3 border-t border-sky-200/70">
-                <span class="text-[10px] uppercase font-bold text-slate-500 block mb-1.5 tracking-wider">Municipal Benchmark Samples:</span>
-                <div class="flex flex-wrap gap-1.5">
-                  <button type="button" data-sample="cracked_brick" class="btn-lift text-[11px] font-semibold bg-red-100/90 hover:bg-red-200 text-red-800 px-2.5 py-1 rounded-lg border border-red-300 shadow-xs transition" title="Load severe cracked brick industrial mill">
-                    🚨 Cracked Brick
-                  </button>
-                  <button type="button" data-sample="heritage_hall" class="btn-lift text-[11px] font-semibold bg-amber-100/90 hover:bg-amber-200 text-amber-900 px-2.5 py-1 rounded-lg border border-amber-300 shadow-xs transition" title="Load historic timber municipal hall">
-                    🏚️ Timber Heritage Hall
-                  </button>
-                  <button type="button" data-sample="hospital_annex" class="btn-lift text-[11px] font-semibold bg-orange-100/90 hover:bg-orange-200 text-orange-900 px-2.5 py-1 rounded-lg border border-orange-300 shadow-xs transition" title="Load concrete hospital annex with shear cracks">
-                    🏥 Hospital Annex
-                  </button>
-                  <button type="button" data-sample="aging_school" class="btn-lift text-[11px] font-semibold bg-sky-100/90 hover:bg-sky-200 text-sky-800 px-2.5 py-1 rounded-lg border border-sky-300 shadow-xs transition" title="Load aging concrete school block">
-                    🏫 Concrete School
-                  </button>
-                  <button type="button" data-sample="modern_tower" class="btn-lift text-[11px] font-semibold bg-emerald-100/90 hover:bg-emerald-200 text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-300 shadow-xs transition" title="Load pristine steel tower">
-                    ✅ Steel Tower
-                  </button>
-                </div>
-              </div>
+          <!-- Search, Sort & Quick Add -->
+          <div class="flex items-center gap-2 flex-wrap">
+            <div class="relative flex-1 sm:w-64">
+              <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400"></i>
+              <input id="searchQueue" type="search" placeholder="Search ID, name, ward, material..." class="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500">
             </div>
+            <select id="sortQueue" class="bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium">
+              <option value="risk">Sort: Risk</option>
+              <option value="age">Sort: Age</option>
+              <option value="audit">Sort: Last Audit</option>
+              <option value="name">Sort: Name</option>
+            </select>
+            <button id="btnQueueNewAssessment" type="button" class="btn-lift btn-primary-sm py-1.5 px-3 text-xs font-bold" title="Open Assessment Studio to evaluate a new structure">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>Assess</span>
+            </button>
+          </div>
+        </div>
 
-            <!-- Error Banner -->
-            <div id="formError" class="hidden bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl p-3 font-medium flex items-center gap-2">
-              <i data-lucide="alert-circle" class="w-4 h-4 text-red-500 flex-shrink-0"></i>
-              <span id="formErrorText"></span>
+        <!-- Filter Tabs Strip with Exact Score Bands -->
+        <div class="px-4 sm:px-5 py-2.5 bg-slate-950/90 border-b border-slate-800/80 flex items-center gap-1.5 overflow-x-auto text-xs touch-scroll" id="filterTabs" role="tablist">
+          <button type="button" data-filter="all" class="tab tab-active">All Structures</button>
+          <button type="button" data-filter="critical" class="tab text-red-400 hover:text-red-300 font-bold flex items-center gap-1">🚩 Red Flagged (&lt;50)</button>
+          <button type="button" data-filter="medium" class="tab text-amber-400 hover:text-amber-300 font-semibold">🟡 Medium (50-75)</button>
+          <button type="button" data-filter="low" class="tab text-emerald-400 hover:text-emerald-300 font-semibold">🟢 Safe (&gt;75)</button>
+          <button type="button" data-filter="dispatched" class="tab text-indigo-400 hover:text-indigo-300 font-semibold">🚨 Dispatched</button>
+        </div>
+
+        <!-- Full-Width Queue Table -->
+        <div class="overflow-x-auto touch-scroll flex-1">
+          <table class="w-full text-left text-sm text-slate-200 min-w-[850px]">
+            <thead class="bg-slate-950/90 text-slate-400 text-[10px] font-bold uppercase tracking-wider border-b border-slate-800 font-heading">
+              <tr>
+                <th class="px-4 py-3.5 w-16">Rank</th>
+                <th class="px-4 py-3.5">Structure Profile</th>
+                <th class="px-4 py-3.5 w-36">Safety Score</th>
+                <th class="px-4 py-3.5 w-44">Condition &amp; SLA</th>
+                <th class="px-4 py-3.5 w-44">Officer Deployment</th>
+                <th class="px-4 py-3.5 text-right w-36">Directives</th>
+              </tr>
+            </thead>
+            <tbody id="queueBody" class="divide-y divide-slate-800/80"></tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Strip -->
+        <div id="tablePagination" class="px-4 sm:px-5 py-3 bg-slate-950/80 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+          <div class="flex items-center gap-2">
+            <span id="pageInfoText">Showing 1-25 structures</span>
+            <div class="flex items-center gap-1 ml-2">
+              <span class="text-[11px] text-slate-500">Per page:</span>
+              <select id="pageSizeSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 text-xs text-white focus:outline-none">
+                <option value="15">15</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="1000">All (1,000)</option>
+              </select>
             </div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button id="btnPrevPage" type="button" class="btn-lift btn-outline-sm bg-slate-900 border-slate-700 text-slate-300 hover:text-white py-1 px-2.5 text-xs disabled:opacity-30 disabled:cursor-not-allowed">
+              &larr; Prev
+            </button>
+            <span id="pageNumberBadge" class="px-2.5 py-1 bg-slate-900 text-white rounded-lg font-mono text-xs font-bold border border-slate-700">
+              Page 1 of 1
+            </span>
+            <button id="btnNextPage" type="button" class="btn-lift btn-outline-sm bg-slate-900 border-slate-700 text-slate-300 hover:text-white py-1 px-2.5 text-xs disabled:opacity-30 disabled:cursor-not-allowed">
+              Next &rarr;
+            </button>
+          </div>
+        </div>
 
-            <!-- Building Specification Fields -->
-            <div class="space-y-3.5">
+        <!-- Empty State -->
+        <div id="queueEmpty" class="hidden p-12 text-center text-slate-500">
+          <i data-lucide="search-x" class="w-10 h-10 mx-auto mb-2 text-slate-600"></i>
+          <p id="emptyTitle" class="font-bold text-slate-300 text-sm font-heading">No structures match criteria</p>
+          <p id="emptyText" class="text-xs text-slate-500 mt-1">Try resetting filters or searching a different ward.</p>
+          <button id="btnClearFilters" type="button" class="btn-outline-sm mt-3 bg-slate-800 border-slate-700 text-slate-300">Reset Filters</button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============================== VIEW 2: LIVE ASSESSMENT STUDIO ============================== -->
+    <section id="view-simulator" class="app-view-container space-y-6 hidden">
+      
+      <!-- Studio Header -->
+      <div class="bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-400/30 flex items-center justify-center">
+            <i data-lucide="calculator" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-extrabold text-white font-heading">Interactive Assessment Studio &amp; Real-Time Scorer</h2>
+            <p class="text-xs text-slate-400">Rule-based OOP Strategy engine evaluates statutory parameters and updates safety scores in real time.</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btnStudioOpenScanner" type="button" class="btn-lift btn-glow-sky flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-500/30 font-semibold px-3 py-2 rounded-xl">
+            <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+            <span>Scan Facade Elevation</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- Left: Parameter Input Form (7 Cols) -->
+        <div class="lg:col-span-7 bg-slate-900/95 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
+          <div class="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+            <h3 class="font-bold text-sm text-white font-heading flex items-center gap-2">
+              <i data-lucide="edit-3" class="w-4 h-4 text-sky-400"></i>
+              <span>Building Parameter Inputs</span>
+            </h3>
+            <span id="editBadge" class="hidden text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-0.5 rounded font-mono font-bold">Editing</span>
+          </div>
+
+          <form id="buildingForm" class="p-6 space-y-4 text-xs" novalidate>
+            
+            <!-- Section 1: Identification & Location -->
+            <div>
+              <span class="text-[10px] uppercase font-bold tracking-wider font-mono text-slate-400 block mb-2">1. Identity &amp; Location</span>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label class="text-xs font-bold text-slate-700">Building ID *
-                  <input id="fId" type="text" placeholder="e.g. B-007" maxlength="30" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-normal focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:outline-none transition">
+                <label class="block font-bold text-slate-300">Building ID *
+                  <input id="fId" type="text" placeholder="B-101" maxlength="20" class="mt-1 w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-white font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none" required>
                 </label>
-                <label class="text-xs font-bold text-slate-700">Building Name *
-                  <input id="fName" type="text" placeholder="e.g. Metro Heritage Tower" maxlength="100" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-normal focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:outline-none transition">
+                <label class="block font-bold text-slate-300">Building Name *
+                  <input id="fName" type="text" placeholder="Foundry Mill" maxlength="80" class="mt-1 w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-white focus:ring-2 focus:ring-sky-500 focus:outline-none" required>
                 </label>
               </div>
-
-              <label class="block text-xs font-bold text-slate-700">Ward / Site Address *
-                <input id="fAddr" type="text" placeholder="e.g. 14 Station Road, North Industrial Ward" maxlength="150" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-normal focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:outline-none transition">
+              <label class="block font-bold text-slate-300 mt-3">Ward / Site Address *
+                <input id="fAddr" type="text" placeholder="14 Mill Street, Ward 4" maxlength="120" class="mt-1 w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-white focus:ring-2 focus:ring-sky-500 focus:outline-none" required>
               </label>
+            </div>
 
+            <!-- Section 2: Physical Specifications -->
+            <div class="pt-2 border-t border-slate-800">
+              <span class="text-[10px] uppercase font-bold tracking-wider font-mono text-slate-400 block mb-2">2. Physical Characteristics</span>
               <div class="grid grid-cols-2 gap-3">
-                <label class="text-xs font-bold text-slate-700">Structure Age (Years)
-                  <input id="fAge" type="number" min="0" max="150" value="20" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-normal focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:outline-none transition">
+                <label class="block font-bold text-slate-300">Structure Age (Years)
+                  <input id="fAge" type="number" min="0" max="400" value="25" class="mt-1 w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-white font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none">
                 </label>
-                <label class="text-xs font-bold text-slate-700">Number of Storeys
-                  <input id="fFloors" type="number" min="1" max="100" value="3" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-normal focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:outline-none transition">
+                <label class="block font-bold text-slate-300">Storeys / Floors
+                  <input id="fFloors" type="number" min="1" max="150" value="4" class="mt-1 w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-white font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none">
                 </label>
               </div>
 
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label class="text-xs font-bold text-slate-700">Primary Material
-                  <select id="fMat" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-normal bg-white focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:outline-none transition">
+              <div class="grid grid-cols-2 gap-3 mt-3">
+                <label class="block font-bold text-slate-300">Structural Material
+                  <select id="fMat" class="mt-1 w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-white focus:ring-2 focus:ring-sky-500 focus:outline-none">
                     <option value="RCC">RCC (Reinforced Concrete)</option>
-                    <option value="Steel">Structural Steel Frame</option>
                     <option value="Brick">Brick / Masonry</option>
+                    <option value="Steel">Structural Steel</option>
                     <option value="Wood">Wood / Timber</option>
                     <option value="Mixed">Mixed / Composite</option>
                     <option value="Other">Other / Non-Standard</option>
                   </select>
                 </label>
-                <label class="text-xs font-bold text-slate-700">Occupancy Consequence
-                  <select id="fOcc" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-normal bg-white focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:outline-none transition">
+                <label class="block font-bold text-slate-300">Occupancy Typology
+                  <select id="fOcc" class="mt-1 w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-white focus:ring-2 focus:ring-sky-500 focus:outline-none">
                     <option value="Residential">Residential</option>
                     <option value="Commercial">Commercial</option>
                     <option value="Industrial">Industrial</option>
@@ -337,247 +604,671 @@
                     <option value="School">School / Educational</option>
                     <option value="Hospital">Hospital / Healthcare</option>
                     <option value="Assembly">Assembly / Civic Hall</option>
-                    <option value="Mixed">Mixed Use</option>
                   </select>
                 </label>
               </div>
+            </div>
 
-              <!-- Maintenance Rating Slider -->
-              <div class="bg-slate-50/80 border border-slate-200 rounded-xl p-3">
-                <div class="flex items-center justify-between text-xs font-bold text-slate-700">
-                  <span>Maintenance History Condition (1-10)</span>
-                  <span id="fMaintVal" class="bg-slate-900 text-white rounded-md px-2.5 py-0.5 text-xs font-mono font-bold shadow-xs">7</span>
+            <!-- Section 3: Upkeep & Compliance -->
+            <div class="pt-2 border-t border-slate-800">
+              <span class="text-[10px] uppercase font-bold tracking-wider font-mono text-slate-400 block mb-2">3. Maintenance &amp; Statutory Governance</span>
+              <div>
+                <div class="flex items-center justify-between font-bold text-slate-300">
+                  <span>Maintenance Rating (1-10)</span>
+                  <span id="fMaintVal" class="bg-slate-950 text-sky-400 font-mono px-2.5 py-0.5 rounded-lg border border-slate-800 text-xs">7</span>
                 </div>
-                <input id="fMaint" type="range" min="1" max="10" value="7" class="mt-2.5 w-full">
-                <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-medium">
-                  <span class="text-red-600 font-semibold">1 (Severe Delamination/Spalling)</span>
-                  <span class="text-emerald-600 font-semibold">10 (Pristine/Sound)</span>
+                <input id="fMaint" type="range" min="1" max="10" value="7" class="mt-2 w-full">
+                <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
+                  <span>1 (Severe Distress)</span>
+                  <span>5 (Average)</span>
+                  <span>10 (Pristine)</span>
                 </div>
               </div>
 
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-                <label class="text-xs font-bold text-slate-700">Years Since Last Audit
-                  <input id="fInsp" type="number" min="0" max="50" value="2" class="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-normal focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:outline-none transition">
+              <div class="grid grid-cols-2 gap-3 items-end mt-3">
+                <label class="block font-bold text-slate-300">Years Since Audit
+                  <input id="fInsp" type="number" min="0" max="100" value="2" class="mt-1 w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-white font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none">
                 </label>
-                <label class="flex items-center gap-2.5 text-xs font-bold text-slate-700 cursor-pointer pb-2 select-none">
-                  <input id="fComp" type="checkbox" class="toggle sr-only" checked>
-                  <div class="w-11 h-6 bg-slate-300 rounded-full p-0.5 transition"><span class="block w-5 h-5 bg-white rounded-full transition shadow"></span></div>
-                  <span>Code Compliant</span>
+                <label class="flex items-center justify-between bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2.5 cursor-pointer">
+                  <span class="font-bold text-slate-300">NBC Code Compliant</span>
+                  <input id="fComp" type="checkbox" checked class="rounded text-sky-500 focus:ring-sky-500 h-4 w-4">
                 </label>
               </div>
             </div>
 
-            <!-- Real-Time Score Simulator with Live Formula Transparency -->
-            <div class="border border-slate-200/90 rounded-2xl bg-gradient-to-br from-slate-50 via-slate-50 to-slate-100/90 p-4 shadow-inner space-y-2.5">
-              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
-                <span class="flex items-center gap-1 font-heading"><i data-lucide="calculator" class="w-3.5 h-3.5 text-sky-600"></i> Calculated Safety Score</span>
-                <span id="simGrade" class="px-2.5 py-0.5 rounded-full text-xs font-bold text-white bg-slate-800 shadow-xs">Grade A</span>
-              </div>
-              
-              <div class="flex items-baseline justify-between gap-4">
-                <div>
-                  <div id="simScore" class="text-4xl font-black text-slate-900 font-heading tracking-tight">100.0</div>
-                  <div class="text-[10px] text-slate-400">Baseline 100.0 (Higher is safer)</div>
-                </div>
-                <div class="text-right">
-                  <div id="simRisk" class="text-xs font-extrabold uppercase tracking-wider text-emerald-600">LOW RISK</div>
-                  <div id="simUrgent" class="text-xs mt-0.5"></div>
-                </div>
-              </div>
+            <div id="formError" class="hidden rounded-xl bg-red-950/60 border border-red-500/60 p-3 text-red-300 font-medium text-xs"></div>
 
-              <!-- Live Formula Deduction Chips -->
-              <div class="pt-2 border-t border-slate-200/80">
-                <span class="text-[9px] uppercase font-bold text-slate-400 block mb-1 tracking-wider">Exact Deduction Math:</span>
-                <div id="simFormulaBreakdown" class="flex flex-wrap gap-1 text-[10px] font-mono"></div>
-              </div>
-            </div>
-
-            <!-- Action Buttons: Submit and Cancel Edit -->
-            <div class="space-y-2">
-              <button id="btnSubmitAssessment" type="button" class="btn-lift w-full bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl py-3 flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition font-heading">
-                <i data-lucide="plus-circle" class="w-4 h-4 text-sky-400"></i>
-                <span id="btnSubmitText">Assess &amp; Add to Priority Queue</span>
+            <div class="flex gap-2 pt-2">
+              <button id="btnSubmit" type="submit" class="btn-lift btn-shimmer btn-primary flex-1 py-2.5 text-xs font-bold">
+                <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                <span id="submitLabel">Save &amp; Prioritize in Registry</span>
               </button>
-
-              <button id="btnCancelEdit" type="button" class="hidden w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl py-2 text-xs transition">
-                Cancel Edit Mode
+              <button id="btnCancelEdit" type="button" class="btn-outline hidden py-2.5 text-xs">
+                Cancel
               </button>
             </div>
-
-          </div>
+          </form>
         </div>
-      </aside>
 
-      <!-- Right Column: Priority Inspection Queue Table (7 cols) -->
-      <section id="panelQueue" class="hidden lg:block lg:col-span-7 space-y-4">
-        <div class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden flex flex-col h-full">
-          
-          <!-- Card Header -->
-          <div class="px-5 py-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
-            <div class="flex items-center gap-2.5">
-              <div class="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sky-400">
-                <i data-lucide="list-ordered" class="w-4 h-4"></i>
+        <!-- Right: Real-Time HUD Live Simulator Display (5 Cols) -->
+        <div class="lg:col-span-5 space-y-4">
+          <div class="bg-slate-900/95 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span class="text-[10px] uppercase font-bold text-slate-400 font-mono tracking-wider">Strategy Engine Telemetry</span>
+                <div class="flex items-baseline gap-2 mt-1">
+                  <div id="simScore" class="text-4xl sm:text-5xl font-black text-sky-400 font-mono leading-none">100.0</div>
+                  <span class="text-xs text-slate-400 font-mono">/ 100</span>
+                </div>
+              </div>
+              <div id="simGrade" class="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500 text-3xl font-black text-white shadow-lg shadow-emerald-500/20">A</div>
+            </div>
+
+            <div class="flex items-center justify-between pt-1">
+              <div>
+                <span class="text-[10px] text-slate-400 block font-mono">Assigned Condition:</span>
+                <span id="simRisk" class="red-flag-badge mt-0.5">LOW RISK</span>
+              </div>
+              <div class="text-right">
+                <span class="text-[10px] text-slate-400 block font-mono">Statutory Inspection SLA:</span>
+                <span id="simUrgent" class="text-xs text-white font-mono font-bold mt-0.5">Routine Annual Cycle</span>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-800">
+              <span class="text-[10px] uppercase font-bold text-slate-400 font-mono block mb-2">Itemized Checklist Penalty Deductions:</span>
+              <ul id="simBreakdown" class="max-h-48 overflow-y-auto space-y-1.5 text-xs pr-1"></ul>
+            </div>
+          </div>
+
+          <!-- Quick Elevation Card in Studio -->
+          <div class="bg-gradient-to-br from-slate-900 to-sky-950/50 border border-sky-500/30 rounded-2xl p-5 shadow-xl space-y-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center border border-sky-400/30 flex-shrink-0">
+                <i data-lucide="scan-line" class="w-5 h-5"></i>
               </div>
               <div>
-                <h2 class="font-bold text-sm md:text-base leading-tight font-heading">Prioritized Municipal Inspection Queue</h2>
-                <p class="text-[11px] text-slate-300">Ranked by Highest Risk First &bull; Prioritizing limited municipal engineers</p>
+                <h4 class="font-bold text-white text-xs font-heading">Auto-Fill via Computer Vision?</h4>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Upload facade images or test camera snapshots to auto-detect materials, estimated age &amp; crack severity.</p>
               </div>
             </div>
-            <div class="flex items-center gap-2">
-              <span id="queueCounterBadge" class="text-xs bg-slate-800 border border-slate-700 text-slate-300 px-2.5 py-1 rounded-full font-mono">
-                0 Structures
-              </span>
-            </div>
+            <button id="btnOpenSideScannerCard" type="button" class="btn-lift btn-shimmer btn-glow-sky w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition shadow-md">
+              <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+              <span>Launch AI Elevation Scanner</span>
+            </button>
           </div>
+        </div>
 
-          <!-- Filter & Search Toolbar -->
-          <div class="p-3.5 border-b border-slate-200 bg-slate-50/70 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            <div id="filterTabs" class="flex flex-wrap gap-1" role="tablist"></div>
-            
-            <div class="relative flex-shrink-0">
-              <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400"></i>
-              <input id="searchQueue" type="text" placeholder="Filter by ID, name, ward..." class="pl-8.5 pr-8 py-1.5 border border-slate-300 rounded-lg text-xs w-full md:w-56 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:outline-none transition">
-              <button id="btnClearSearch" type="button" class="hidden absolute right-2.5 top-2 text-slate-400 hover:text-slate-600" title="Clear search">
-                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+      </div>
+
+    </section>
+
+    <!-- ============================== VIEW 3: DEDICATED AI ELEVATION SCANNER LAB ============================== -->
+    <section id="view-scanner" class="app-view-container space-y-6 hidden">
+      
+      <!-- Scanner Suite Header -->
+      <div class="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-400/30 flex items-center justify-center">
+            <i data-lucide="camera" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-extrabold text-white font-heading">AI Elevation Scanner &amp; Facade Vision Lab</h2>
+            <p class="text-xs text-slate-400">Client-side Sobel edge fracture detection, architectural typology heuristics, and material composition analysis.</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="photoStatus" class="font-mono text-xs bg-slate-800 text-slate-300 px-3 py-1 rounded-full font-bold border border-slate-700">No photo loaded</span>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- Left: Upload, Camera & Canvas (7 Cols) -->
+        <div class="lg:col-span-7 bg-slate-900/95 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <input type="file" id="photoInput" accept="image/jpeg,image/png,image/webp" class="hidden">
+
+          <!-- Drag & Drop Zone -->
+          <div id="dropZone" class="border-2 border-dashed border-sky-400/40 bg-slate-950/70 rounded-2xl p-6 text-center transition hover:border-sky-400 hover:bg-slate-900/80">
+            <div class="w-12 h-12 rounded-2xl bg-sky-500/20 text-sky-400 flex items-center justify-center mx-auto mb-2 border border-sky-400/30">
+              <i data-lucide="image-up" class="w-6 h-6"></i>
+            </div>
+            <p class="font-bold text-white text-sm font-heading">Drop building facade photo here</p>
+            <p class="text-xs text-slate-400 mt-0.5">Scans cracks, material composition &amp; storey bands &bull; JPEG, PNG, WEBP max 10MB</p>
+            <div class="mt-4 flex items-center justify-center gap-2">
+              <button id="btnBrowse" type="button" class="btn-lift btn-primary-sm py-2 px-3.5 text-xs">
+                <i data-lucide="folder-open" class="w-3.5 h-3.5"></i> Browse Local Files
+              </button>
+              <button id="btnCamera" type="button" class="btn-lift btn-outline-sm py-2 px-3.5 text-xs bg-slate-900 text-slate-200 border-slate-700">
+                <i data-lucide="camera" class="w-3.5 h-3.5 text-sky-400"></i> Live Webcam
               </button>
             </div>
           </div>
 
-          <!-- Mobile Horizontal Scroll Hint -->
-          <div class="md:hidden text-[11px] text-slate-500 px-4 py-2 bg-sky-50/80 border-b border-sky-100 flex items-center justify-between">
-            <span class="flex items-center gap-1.5 font-medium">
-              <i data-lucide="arrow-left-right" class="w-3.5 h-3.5 text-sky-600"></i>
-              Swipe horizontally for full table &amp; actions
-            </span>
-            <span class="font-mono text-[10px] text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded font-bold">⇄ Scroll</span>
-          </div>
-
-          <!-- Queue Table -->
-          <div class="overflow-x-auto flex-1 touch-scroll">
-            <table class="w-full text-left text-sm">
-              <thead class="bg-slate-50 text-slate-500 text-[10px] font-bold uppercase tracking-wider border-b border-slate-200 font-heading">
-                <tr>
-                  <th class="px-4 py-3">Rank</th>
-                  <th class="px-4 py-3">Building Profile</th>
-                  <th class="px-4 py-3">Score</th>
-                  <th class="px-4 py-3">Risk Level</th>
-                  <th class="px-4 py-3">Inspection</th>
-                  <th class="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="queueTableBody" class="divide-y divide-slate-100"></tbody>
-            </table>
-          </div>
-
-          <!-- Empty State -->
-          <div id="emptyQueueMsg" class="hidden p-12 text-center text-slate-400 text-sm">
-            <div class="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto mb-3">
-              <i data-lucide="folder-search" class="w-6 h-6"></i>
+          <!-- Preview Canvas Container -->
+          <div id="photoPreview" class="hidden relative">
+            <div class="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-inner">
+              <canvas id="photoCanvas" class="w-full h-auto max-h-96 object-contain"></canvas>
+              <div id="scannerLaser" class="scanner-laser hidden"></div>
+              <div class="absolute right-3 top-3 flex gap-1.5">
+                <button id="btnEnlarge" type="button" class="icon-chip" title="Enlarge"><i data-lucide="maximize-2" class="w-4 h-4"></i></button>
+                <button id="btnRemovePhoto" type="button" class="icon-chip hover:border-red-500 hover:text-red-400" title="Remove"><i data-lucide="x" class="w-4 h-4"></i></button>
+              </div>
             </div>
-            <p class="font-semibold text-slate-700">No buildings match current criteria</p>
-            <p class="text-xs text-slate-400 mt-1">Try clearing your search query or switching filters.</p>
-            <button id="btnResetFilter" type="button" class="mt-3 text-xs text-sky-600 hover:text-sky-700 font-semibold underline">Reset filters</button>
+          </div>
+
+          <!-- Benchmark Samples Quick Selector -->
+          <div class="pt-4 border-t border-slate-800">
+            <span class="text-xs uppercase font-bold text-slate-400 block mb-2.5 font-mono">1-Click Test Benchmark Scenarios:</span>
+            <div class="flex flex-wrap gap-2" id="sampleBar">
+              <button type="button" data-sample="cracked_brick" class="chip"><i data-lucide="factory" class="w-3.5 h-3.5 text-red-500"></i>Cracked Brick Foundry</button>
+              <button type="button" data-sample="timber_hall" class="chip"><i data-lucide="warehouse" class="w-3.5 h-3.5 text-amber-500"></i>Timber Heritage Hall</button>
+              <button type="button" data-sample="hospital_annex" class="chip"><i data-lucide="hospital" class="w-3.5 h-3.5 text-sky-500"></i>Hospital Annex</button>
+              <button type="button" data-sample="concrete_school" class="chip"><i data-lucide="school" class="w-3.5 h-3.5 text-orange-500"></i>Concrete School</button>
+              <button type="button" data-sample="steel_tower" class="chip"><i data-lucide="building" class="w-3.5 h-3.5 text-indigo-500"></i>Steel Tower</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: AI Telemetry & Diagnostics (5 Cols) -->
+        <div class="lg:col-span-5 space-y-4">
+          
+          <!-- Telemetry Details Card -->
+          <div id="telemetry" class="bg-slate-900/95 text-white rounded-2xl p-6 space-y-3.5 border border-slate-800 text-xs shadow-xl">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <span class="font-extrabold text-sm text-sky-400 flex items-center gap-1.5 font-heading">
+                <i data-lucide="scan" class="w-4 h-4"></i> Structural Telemetry
+              </span>
+              <span id="tvConfidence" class="text-xs font-mono bg-sky-500/20 text-sky-300 px-2.5 py-0.5 rounded-full font-bold"></span>
+            </div>
+
+            <div>
+              <div id="tvName" class="font-extrabold text-white text-sm font-heading"></div>
+              <div id="tvTypology" class="text-xs text-slate-400 mt-0.5"></div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 text-center pt-1">
+              <div class="bg-slate-950 border border-slate-800 p-2.5 rounded-xl"><span class="text-[10px] text-slate-400 uppercase block font-bold">Material</span><span id="tvMaterial" class="font-bold text-amber-300 text-xs"></span></div>
+              <div class="bg-slate-950 border border-slate-800 p-2.5 rounded-xl"><span class="text-[10px] text-slate-400 uppercase block font-bold">Storeys</span><span id="tvFloors" class="font-bold text-sky-300 text-xs"></span></div>
+              <div class="bg-slate-950 border border-slate-800 p-2.5 rounded-xl"><span class="text-[10px] text-slate-400 uppercase block font-bold">Est. Age</span><span id="tvAge" class="font-bold text-emerald-300 text-xs"></span></div>
+            </div>
+
+            <div id="tvDistress" class="p-3 rounded-xl border text-xs">
+              <div id="tvDistressTitle" class="font-bold font-heading"></div>
+              <div id="tvDistressDesc" class="text-[11px] mt-1 leading-relaxed"></div>
+            </div>
+
+            <div>
+              <span class="text-[10px] uppercase font-bold text-slate-400 block mb-1 font-mono">Structural Items Recognized:</span>
+              <ul id="tvItems" class="flex flex-wrap gap-1.5"></ul>
+            </div>
+
+            <p id="tvNote" class="hidden p-2.5 rounded-xl bg-amber-950/60 text-amber-300 border border-amber-500/40 text-[11px] leading-relaxed"></p>
+
+            <!-- Sync CTA Button -->
+            <div class="pt-3 border-t border-slate-800">
+              <button id="btnApplyScanToForm" type="button" class="btn-lift btn-shimmer btn-primary w-full py-2.5 text-xs font-bold flex items-center justify-center gap-2">
+                <i data-lucide="check-circle" class="w-4 h-4"></i>
+                <span>Transfer Telemetry to Live Assessment Studio</span>
+              </button>
+            </div>
           </div>
 
         </div>
-      </section>
 
-    </div>
+      </div>
+
+    </section>
+
+    <!-- ============================== VIEW 4: OFFICER OPERATIONS ============================== -->
+    <section id="view-deployments" class="app-view-container space-y-6 hidden">
+      
+      <!-- Operations Header -->
+      <div class="bg-gradient-to-r from-indigo-950/50 via-slate-900 to-slate-950 border border-indigo-500/30 rounded-2xl p-5 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-400/30 flex items-center justify-center">
+            <i data-lucide="shield-alert" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-extrabold text-white font-heading">Municipal Field Officer Operations &amp; Deployment Registry</h2>
+            <p class="text-xs text-slate-400">Live operational command roster tracking assigned structural engineering squads, cordoning notices, and statutory SLAs.</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btnDeploymentsBatchDispatch" type="button" class="btn-lift btn-shimmer btn-danger text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5">
+            <i data-lucide="siren" class="w-3.5 h-3.5"></i>
+            <span>Deploy to All Critical Sites</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Squad Capacity Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-1 bg-rose-500"></div>
+          <div class="flex items-center justify-between text-xs font-bold text-slate-300 font-heading">
+            <span>Squad Alpha</span>
+            <span class="bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded text-[10px] font-mono">Rapid Collapse</span>
+          </div>
+          <p class="text-xs font-semibold text-white mt-1.5">Lead: Eng. Sarah Jenkins, PE</p>
+          <p class="text-[11px] text-slate-400 mt-0.5">Ultrasonic meters, laser displacement, emergency cordoning</p>
+        </div>
+
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-1 bg-amber-500"></div>
+          <div class="flex items-center justify-between text-xs font-bold text-slate-300 font-heading">
+            <span>Squad Bravo</span>
+            <span class="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded text-[10px] font-mono">Forensic Audit</span>
+          </div>
+          <p class="text-xs font-semibold text-white mt-1.5">Lead: Dr. Marcus Vance</p>
+          <p class="text-[11px] text-slate-400 mt-0.5">Schmidt hammer, core extraction, foundation settlement</p>
+        </div>
+
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-1 bg-sky-500"></div>
+          <div class="flex items-center justify-between text-xs font-bold text-slate-300 font-heading">
+            <span>Squad Delta</span>
+            <span class="bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded text-[10px] font-mono">Healthcare &amp; Public</span>
+          </div>
+          <p class="text-xs font-semibold text-white mt-1.5">Lead: Insp. Tariq Al-Mansoor</p>
+          <p class="text-[11px] text-slate-400 mt-0.5">High-consequence facilities, schools, civic assembly halls</p>
+        </div>
+
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-1 bg-emerald-500"></div>
+          <div class="flex items-center justify-between text-xs font-bold text-slate-300 font-heading">
+            <span>Squad Gamma</span>
+            <span class="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded text-[10px] font-mono">Historic &amp; Timber</span>
+          </div>
+          <p class="text-xs font-semibold text-white mt-1.5">Lead: Eng. Elena Rostova</p>
+          <p class="text-[11px] text-slate-400 mt-0.5">Masonry lime mortar, timber dry-rot, heritage conservation</p>
+        </div>
+
+      </div>
+
+      <!-- Missions Roster Table Container -->
+      <div class="bg-slate-900/95 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
+        <div class="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <h3 class="font-bold text-sm text-white font-heading flex items-center gap-2">
+              <i data-lucide="shield-check" class="w-4 h-4 text-indigo-400"></i>
+              <span>Active Field Mission Deployments on Record</span>
+            </h3>
+            <span id="operationsCountBadge" class="text-xs bg-indigo-950 border border-indigo-500/40 text-indigo-300 px-2.5 py-0.5 rounded-full font-mono font-bold">0 Active</span>
+          </div>
+          <button id="btnClearDispatchHistory" type="button" class="text-xs text-slate-400 hover:text-red-400 transition font-medium">Clear Log</button>
+        </div>
+
+        <div class="p-6">
+          <div id="dispatchLogList" class="space-y-3"></div>
+          <div id="dispatchLogEmpty" class="hidden p-12 text-center text-slate-500">
+            <i data-lucide="shield-check" class="w-10 h-10 mx-auto mb-2 text-slate-600"></i>
+            <p class="font-bold text-slate-300 text-sm font-heading">No active officer dispatches on record</p>
+            <p class="text-xs text-slate-500 mt-1">Use the "Send Officers" button on any red-flagged critical structure in the queue.</p>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ============================== VIEW 5: STRATEGY RULES EXPLORER ============================== -->
+    <section id="view-rules" class="app-view-container space-y-6 hidden">
+      
+      <div class="bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-400/30 flex items-center justify-center">
+            <i data-lucide="list-checks" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-extrabold text-white font-heading">OOP Strategy Pattern Inspection Checklist Engine</h2>
+            <p class="text-xs text-slate-400">Object-oriented inspection rule hierarchy scoring physical structural integrity against statutory codes.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Threshold Band Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+        <div class="rule-threshold-card rule-threshold-safe rounded-2xl p-4 shadow-sm">
+          <span class="threshold-pill-title font-bold text-sm font-heading flex items-center gap-1.5">🟢 SAFE (Score ≥ 75.0)</span>
+          <p class="threshold-pill-desc text-xs mt-1 leading-relaxed">Grade A / B. Structurally sound. Maintained on routine annual municipal audit cycle.</p>
+        </div>
+        <div class="rule-threshold-card rule-threshold-medium rounded-2xl p-4 shadow-sm">
+          <span class="threshold-pill-title font-bold text-sm font-heading flex items-center gap-1.5">🟡 MEDIUM (Score 50.0–74.9)</span>
+          <p class="threshold-pill-desc text-xs mt-1 leading-relaxed">Grade C. Moderate distress or deferred upkeep. Monitored on 60-day municipal inspection cycle.</p>
+        </div>
+        <div class="rule-threshold-card rule-threshold-critical rounded-2xl p-4 shadow-sm">
+          <span class="threshold-pill-title font-bold text-sm font-heading flex items-center gap-1.5">🚩 CRITICAL HAZARD (Score &lt; 50.0)</span>
+          <p class="threshold-pill-desc text-xs mt-1 leading-relaxed">Grade D / F. Red-flagged structural collapse risk. Mandatory emergency field officer dispatch (24h SLA).</p>
+        </div>
+      </div>
+
+      <!-- Strategy Catalog Cards Grid -->
+      <div id="strategyRulesCatalogGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+
+    </section>
+
+    <!-- ============================== VIEW 6: WARD RISK ANALYTICS ============================== -->
+    <section id="view-analytics" class="app-view-container space-y-6 hidden">
+      
+      <div class="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-400/30 flex items-center justify-center">
+            <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-extrabold text-white font-heading">Ward Structural Risk &amp; Resilience Intelligence</h2>
+            <p class="text-xs text-slate-400">Aggregate telemetry, material vulnerability indices, and statutory compliance distribution across 1,000 structures.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Macro Analytics Metric Ribbon -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <div class="text-[10px] text-slate-400 uppercase font-mono font-bold">Ward Risk Factor</div>
+          <div id="analyticsCriticalPct" class="text-2xl sm:text-3xl font-black text-rose-500 mt-1 font-mono">0.0%</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Critical collapse hazard share</div>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <div class="text-[10px] text-slate-400 uppercase font-mono font-bold">Average Ward Score</div>
+          <div id="analyticsAvgScore" class="text-2xl sm:text-3xl font-black text-white mt-1 font-mono">0.0</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Ward resilience index (/100)</div>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <div class="text-[10px] text-slate-400 uppercase font-mono font-bold">Overdue Audit Ratio</div>
+          <div id="analyticsOverduePct" class="text-2xl sm:text-3xl font-black text-amber-400 mt-1 font-mono">0.0%</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Audits &gt;5 years overdue</div>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <div class="text-[10px] text-slate-400 uppercase font-mono font-bold">Statutory NBC Compliance</div>
+          <div id="analyticsCompliancePct" class="text-2xl sm:text-3xl font-black text-emerald-400 mt-1 font-mono">0%</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Seismic &amp; fire code verified</div>
+        </div>
+      </div>
+
+      <!-- Breakdown Matrices -->
+      <div class="grid lg:grid-cols-2 gap-6">
+        
+        <!-- Risk Band Distribution -->
+        <div class="bg-slate-900/95 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <h3 class="font-bold text-sm text-white font-heading flex items-center gap-2">
+            <i data-lucide="pie-chart" class="w-4 h-4 text-sky-400"></i>
+            <span>Municipal Safety Band Distribution</span>
+          </h3>
+          <div id="analyticsRiskBands" class="space-y-3"></div>
+        </div>
+
+        <!-- Material Vulnerability Ranking -->
+        <div class="bg-slate-900/95 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <h3 class="font-bold text-sm text-white font-heading flex items-center gap-2">
+            <i data-lucide="layers" class="w-4 h-4 text-sky-400"></i>
+            <span>Structural Material Vulnerability Matrix</span>
+          </h3>
+          <div id="analyticsMaterialMatrix" class="space-y-2.5"></div>
+        </div>
+
+      </div>
+
+    </section>
+
   </main>
+    </div> <!-- /#mainContentWrapper -->
+  </div> <!-- /#appShell -->
+
+  <!-- ============================== SIDE DRAWER: CAMERA & PHOTO ELEVATION SCANNER ============================== -->
+  <div id="sideDrawerBackdrop" class="side-drawer-backdrop" aria-hidden="true"></div>
+  <aside id="sideScannerDrawer" class="side-drawer" role="dialog" aria-modal="true" aria-labelledby="sideDrawerTitle">
+    
+    <!-- Drawer Header -->
+    <div class="px-5 py-4 bg-slate-950 text-white border-b border-slate-800 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400">
+          <i data-lucide="camera" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h3 id="sideDrawerTitle" class="font-bold text-sm font-heading leading-tight text-white">Elevation &amp; Facade Scanner</h3>
+          <p class="text-[10px] text-slate-400 font-mono">Side Inspector &bull; Local Heuristic Telemetry</p>
+        </div>
+      </div>
+      <button id="btnCloseSideScanner" type="button" class="icon-btn text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800" aria-label="Close Side Panel">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <!-- Drawer Body Content -->
+    <div class="p-5 overflow-y-auto flex-1 space-y-4 text-xs text-slate-200">
+      <p class="text-slate-400">Quick facade elevation inspection. For the full vision laboratory, switch to the <strong class="text-sky-300">AI Elevation Scanner</strong> tab.</p>
+      <button id="btnDrawerSwitchToFullScanner" type="button" class="btn-lift btn-shimmer btn-primary w-full py-2.5 text-xs font-bold flex items-center justify-center gap-2">
+        <i data-lucide="maximize" class="w-4 h-4"></i>
+        <span>Open Full AI Scanner Workspace</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============================== MODALS ============================== -->
+
+  <!-- 1. FIELD OFFICER EMERGENCY DISPATCH MODAL -->
+  <div id="dispatchModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="dispModalTitle">
+    <div class="modal-panel max-w-xl">
+      <div class="px-6 py-4 bg-gradient-to-r from-red-950 via-slate-900 to-slate-950 text-white flex items-center justify-between border-b border-red-500/40">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-red-600/20 border border-red-500/50 flex items-center justify-center text-red-400 hazard-flag-pulse">
+            <i data-lucide="siren" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 id="dispModalTitle" class="font-bold text-sm font-heading leading-tight text-white">
+              Emergency Field Officer Dispatch Order
+            </h3>
+            <p class="text-[10px] text-slate-400 font-mono">Statutory Municipal Inspection Directive &bull; Section 127</p>
+          </div>
+        </div>
+        <button type="button" data-close="dispatchModal" class="icon-btn text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <div class="p-6 space-y-4 text-xs text-slate-300">
+        <!-- Target Site Profile -->
+        <div class="bg-red-950/30 border border-red-500/30 rounded-xl p-3.5 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm text-white font-heading" id="dispBuildingName">Target Structure</span>
+            <span id="dispScoreBadge" class="red-flag-badge">Score: 0.0</span>
+          </div>
+          <p id="dispBuildingDetails" class="text-xs text-slate-400 font-mono"></p>
+          <div id="dispHazardReasonBox" class="p-2.5 rounded-lg bg-slate-900/90 border border-red-500/30 text-red-300 text-[11px] leading-relaxed font-medium"></div>
+        </div>
+
+        <!-- Squad Assignment -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block font-bold text-slate-200">Assign Municipal Squad *
+            <select id="dispSquadSelect" class="mt-1 w-full border border-slate-700 rounded-lg px-2.5 py-2 font-normal bg-slate-900 text-white focus:ring-2 focus:ring-sky-500">
+              <option value="Squad Alpha — Rapid Collapse Response Team (Lead: Eng. Sarah Jenkins, PE)">Squad Alpha — Rapid Collapse (Eng. Jenkins)</option>
+              <option value="Squad Bravo — Forensic Auditing Unit (Lead: Dr. Marcus Vance)">Squad Bravo — Forensic Auditing (Dr. Vance)</option>
+              <option value="Squad Delta — Healthcare & Public Facilities (Lead: Insp. Tariq Al-Mansoor)">Squad Delta — Healthcare Squad (Insp. Al-Mansoor)</option>
+              <option value="Squad Gamma — Historic & Timber Taskforce (Lead: Eng. Elena Rostova)">Squad Gamma — Timber Taskforce (Eng. Rostova)</option>
+            </select>
+          </label>
+
+          <label class="block font-bold text-slate-200">Priority &amp; Statutory SLA *
+            <select id="dispPrioritySelect" class="mt-1 w-full border border-slate-700 rounded-lg px-2.5 py-2 font-normal bg-slate-900 text-white focus:ring-2 focus:ring-sky-500">
+              <option value="CODE RED — Immediate Cordoning (4 Hours SLA)">CODE RED — Immediate Cordoning (4h SLA)</option>
+              <option value="CODE ORANGE — Mandatory Priority Audit (24 Hours SLA)">CODE ORANGE — Priority Audit (24h SLA)</option>
+              <option value="PRIORITY-2 — Non-Destructive Testing (48 Hours SLA)">PRIORITY-2 — NDT Inspection (48h SLA)</option>
+            </select>
+          </label>
+        </div>
+
+        <!-- Testing Equipment -->
+        <div>
+          <span class="block font-bold text-slate-200 mb-1">Mandatory Field Testing Equipment:</span>
+          <div class="grid grid-cols-2 gap-2 p-3 bg-slate-900 border border-slate-800 rounded-xl text-[11px]">
+            <label class="flex items-center gap-2"><input type="checkbox" checked class="rounded text-sky-500 bg-slate-800 border-slate-700"> <span>Ultrasonic Pulse Meter</span></label>
+            <label class="flex items-center gap-2"><input type="checkbox" checked class="rounded text-sky-500 bg-slate-800 border-slate-700"> <span>Crack Optical Gauge</span></label>
+            <label class="flex items-center gap-2"><input type="checkbox" checked class="rounded text-sky-500 bg-slate-800 border-slate-700"> <span>Schmidt Rebound Hammer</span></label>
+            <label class="flex items-center gap-2"><input type="checkbox" checked class="rounded text-sky-500 bg-slate-800 border-slate-700"> <span>Laser Inclinometer</span></label>
+          </div>
+        </div>
+
+        <!-- Directive Instructions -->
+        <label class="block font-bold text-slate-200">Field Directives &amp; On-Site Instructions
+          <textarea id="dispInstructions" rows="2" class="mt-1 w-full border border-slate-700 bg-slate-900 text-white rounded-lg p-2.5 font-normal focus:ring-2 focus:ring-sky-500" placeholder="Inspect load-bearing perimeter piers, verify crack progression, immediate cordoning if displacement exceeds 5mm..."></textarea>
+        </label>
+      </div>
+
+      <div class="px-6 py-3.5 bg-slate-950 border-t border-slate-800 flex justify-end gap-2">
+        <button type="button" data-close="dispatchModal" class="btn-outline">Cancel</button>
+        <button id="btnConfirmDispatch" type="button" class="btn-lift btn-shimmer btn-danger btn-glow-danger flex items-center gap-2">
+          <i data-lucide="send" class="w-3.5 h-3.5"></i>
+          <span>Send Officers to Site</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. OFFICER DISPATCH REGISTRY & ACTIVE DEPLOYMENTS MODAL -->
+  <div id="dispatchLogModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="dispLogTitle">
+    <div class="modal-panel max-w-3xl">
+      <div class="px-6 py-4 bg-slate-950 text-white flex items-center justify-between border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center border border-indigo-400/30">
+            <i data-lucide="shield-alert" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 id="dispLogTitle" class="font-bold text-sm font-heading text-white">Municipal Field Officer Deployment Registry</h3>
+            <p class="text-[10px] text-slate-400 font-mono">Live On-Site Structural Verification Roster</p>
+          </div>
+        </div>
+        <button type="button" data-close="dispatchLogModal" class="icon-btn text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto text-xs text-slate-300">
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-slate-200">Active Field Missions on Record:</span>
+          <button id="btnClearDispatchHistory" type="button" class="text-[11px] text-slate-400 hover:text-red-400 transition">Clear Log</button>
+        </div>
+        <div id="dispatchLogList" class="space-y-2.5"></div>
+        <div id="dispatchLogEmpty" class="hidden p-8 text-center text-slate-500">
+          <i data-lucide="shield-check" class="w-8 h-8 mx-auto mb-2 text-slate-600"></i>
+          <p class="font-semibold text-slate-300">No active officer dispatches on record</p>
+          <p class="text-[11px] text-slate-500 mt-0.5">Use the "Send Officers" button on any structure to mobilize squads.</p>
+        </div>
+      </div>
+
+      <div class="px-6 py-3 bg-slate-950 border-t border-slate-800 flex justify-end">
+        <button type="button" data-close="dispatchLogModal" class="btn-outline">Close Registry</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. AUDIT REPORT MODAL -->
+  <div id="auditModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="auditTitle">
+    <div class="modal-panel max-w-3xl">
+      <div class="flex items-center justify-between border-b border-slate-800 px-6 py-4 bg-slate-950">
+        <h2 id="auditTitle" class="flex items-center gap-2 text-base font-extrabold text-white font-heading">
+          <i data-lucide="clipboard-list" class="h-5 w-5 text-sky-400"></i>
+          Structural Audit &amp; Findings Report
+        </h2>
+        <button type="button" data-close="auditModal" class="icon-btn" aria-label="Close"><i data-lucide="x" class="h-5 w-5"></i></button>
+      </div>
+      <div id="auditContent" class="max-h-[70vh] overflow-y-auto p-6 space-y-4 text-xs text-slate-200"></div>
+      <div class="flex flex-col gap-2 border-t border-slate-800 bg-slate-950 px-6 py-3.5 sm:flex-row sm:justify-end">
+        <button id="btnPrint" type="button" class="btn-lift btn-shimmer btn-primary"><i data-lucide="printer" class="h-4 w-4"></i>Print Official Notice</button>
+        <button type="button" data-close="auditModal" class="btn-outline">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. PHOTO ENLARGE MODAL -->
+  <div id="photoModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="photoModalTitle">
+    <div class="modal-panel max-w-4xl">
+      <div class="flex items-center justify-between border-b border-slate-800 bg-slate-950 px-5 py-3 text-white">
+        <h2 id="photoModalTitle" class="truncate text-sm font-bold font-heading">Facade Photo</h2>
+        <button type="button" data-close="photoModal" class="icon-chip" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button>
+      </div>
+      <div class="bg-black p-2 flex items-center justify-center">
+        <img id="photoModalImg" alt="Enlarged building facade" class="mx-auto max-h-[75vh] w-auto rounded-lg object-contain">
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. WEBCAM CAPTURE MODAL -->
+  <div id="webcamModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="webcamTitle">
+    <div class="modal-panel max-w-xl">
+      <div class="flex items-center justify-between border-b border-slate-800 px-5 py-3.5 bg-slate-950">
+        <h2 id="webcamTitle" class="text-sm font-bold text-white font-heading flex items-center gap-2">
+          <i data-lucide="camera" class="h-4 w-4 text-sky-400"></i>
+          Live Facade Camera Capture
+        </h2>
+        <button type="button" data-close="webcamModal" class="icon-btn" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button>
+      </div>
+      <div class="space-y-3 p-4">
+        <video id="webcamVideo" autoplay playsinline muted class="aspect-video w-full rounded-xl bg-slate-950 shadow-inner object-cover"></video>
+        <p id="webcamMsg" class="hidden rounded-xl bg-red-950/60 text-red-300 border border-red-500/40 p-3 text-xs"></p>
+        <button id="btnCapture" type="button" class="btn-lift btn-shimmer btn-primary w-full"><i data-lucide="aperture" class="h-4 w-4"></i>Snapshot &amp; Analyze</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. SCORING RULES MODAL -->
+  <div id="rulesModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+    <div class="modal-panel max-w-4xl">
+      <div class="flex items-center justify-between border-b border-slate-800 px-6 py-4 bg-slate-950">
+        <h2 id="rulesTitle" class="flex items-center gap-2 text-base font-extrabold text-white font-heading">
+          <i data-lucide="list-checks" class="h-5 w-5 text-sky-400"></i>
+          How the Score is Calculated (Strategy Pattern)
+        </h2>
+        <button type="button" data-close="rulesModal" class="icon-btn" aria-label="Close"><i data-lucide="x" class="h-5 w-5"></i></button>
+      </div>
+      <div id="rulesContent" class="max-h-[75vh] overflow-y-auto p-6 space-y-4 text-xs text-slate-300"></div>
+    </div>
+  </div>
+
+  <!-- 7. RESET MODAL -->
+  <div id="resetModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="resetTitle">
+    <div class="modal-panel max-w-md">
+      <div class="p-6">
+        <h2 id="resetTitle" class="flex items-center gap-2 text-base font-extrabold text-white font-heading">
+          <i data-lucide="rotate-ccw" class="h-5 w-5 text-amber-400"></i>
+          Reset Registry Data
+        </h2>
+        <p class="mt-2 text-xs text-slate-400">Select an action for the internal building database:</p>
+        <div class="mt-5 space-y-2.5">
+          <button id="btnReloadDatasetModal" type="button" class="btn-lift btn-primary w-full">Reload Standard Municipal Dataset</button>
+          <button id="btnClearAllModal" type="button" class="btn-lift btn-danger w-full">Clear Everything (Empty Registry)</button>
+          <button type="button" data-close="resetModal" class="btn-outline w-full">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. CONFIRM MODAL -->
+  <div id="confirmModal" class="modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMsg">
+    <div class="modal-panel max-w-md">
+      <div class="p-6">
+        <h2 id="confirmTitle" class="text-base font-extrabold text-white font-heading"></h2>
+        <p id="confirmMsg" class="mt-2 text-xs text-slate-300 leading-relaxed"></p>
+        <div class="mt-5 flex justify-end gap-2">
+          <button id="confirmCancel" type="button" class="btn-outline">Cancel</button>
+          <button id="confirmOk" type="button" class="btn-lift btn-danger">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Quick Scanner Trigger Button (Mobile & Desktop) -->
+  <button id="floatingScanBtn" type="button" class="floating-scan-btn btn-lift btn-shimmer btn-glow-sky rounded-full bg-gradient-to-r from-sky-500 to-indigo-600 text-white p-3.5 shadow-2xl border border-sky-300/40 hover:scale-105 transition" title="Open Elevation Camera & Facade Scanner">
+    <i data-lucide="scan-line" class="w-6 h-6"></i>
+  </button>
 
   <!-- Global Application Toast -->
-  <div id="appToast" class="hidden fixed bottom-4 left-4 right-4 sm:left-auto sm:right-5 sm:max-w-md bg-slate-900 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl border border-slate-700 z-50 flex items-center gap-2.5 toast-animate">
-    <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 flex-shrink-0"></i>
-    <span id="toastMsgText"></span>
-  </div>
+  <div id="toastHost" class="no-print pointer-events-none fixed bottom-4 right-4 z-[90] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-2" aria-live="polite"></div>
 
-  <!-- Detailed Audit Modal -->
-  <div id="auditModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 items-center justify-center p-2.5 sm:p-4">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[94vh] sm:max-h-[92vh] overflow-hidden flex flex-col border border-slate-200">
-      
-      <div class="px-6 py-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between border-b border-slate-800">
-        <span class="font-bold text-sm flex items-center gap-2 font-heading">
-          <i data-lucide="clipboard-check" class="w-4 h-4 text-sky-400"></i>
-          Detailed Structural Audit &amp; Findings Report
-        </span>
-        <button class="closeAuditModal text-slate-400 hover:text-white transition p-1 rounded-lg hover:bg-slate-800"><i data-lucide="x" class="w-5 h-5"></i></button>
-      </div>
+  <!-- Print-Only Notice Area -->
+  <div id="printNoticeArea" class="hidden print:block"></div>
 
-      <div id="auditModalContent" class="p-6 overflow-y-auto space-y-4 flex-1"></div>
-
-      <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-        <button id="btnPrintNotice" type="button" class="btn-lift flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg px-4 py-2 text-xs font-semibold shadow-sm transition">
-          <i data-lucide="printer" class="w-3.5 h-3.5 text-sky-400"></i>
-          <span>Print Official Municipal Notice</span>
-        </button>
-        <button type="button" class="closeAuditModal bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg px-4 py-2 text-xs font-semibold transition">
-          Close
-        </button>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- Fullscreen Photo Modal -->
-  <div id="photoModal" class="hidden fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 items-center justify-center p-2.5 sm:p-4">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-700">
-      <div class="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
-        <span id="photoModalTitle" class="text-xs font-bold font-mono">Building Facade Photo</span>
-        <button class="closePhotoModal text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"><i data-lucide="x" class="w-4 h-4"></i></button>
-      </div>
-      <div class="p-3 bg-black flex items-center justify-center">
-        <img id="photoModalImg" src="" alt="Enlarged Facade" class="max-h-[70vh] object-contain rounded-lg">
-      </div>
-    </div>
-  </div>
-
-  <!-- Webcam Capture Modal -->
-  <div id="webcamModal" class="hidden fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 items-center justify-center p-2.5 sm:p-4">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-700">
-      <div class="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
-        <span class="text-xs font-bold flex items-center gap-1.5 font-heading">
-          <i data-lucide="camera" class="w-4 h-4 text-sky-400"></i>
-          <span>Live Facade Camera Capture</span>
-        </span>
-        <button id="btnCloseWebcam" type="button" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"><i data-lucide="x" class="w-4 h-4"></i></button>
-      </div>
-      <div class="p-3 bg-black flex items-center justify-center">
-        <video id="webcamVideo" autoplay playsinline class="w-full rounded-lg h-64 object-cover"></video>
-      </div>
-      <div class="p-3.5 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
-        <button id="btnCaptureWebcam" type="button" class="btn-lift bg-sky-600 hover:bg-sky-700 text-white rounded-lg px-4 py-2 text-xs font-bold flex items-center gap-1.5 shadow">
-          <i data-lucide="aperture" class="w-4 h-4"></i> Snapshot &amp; Analyze
-        </button>
-      </div>
-    </div>
-  </div>
-
-
-
-  <!-- Hidden Container for Official Print / Municipal Citation -->
-  <div id="printNoticeArea"></div>
-
-  <!-- Application Footer -->
-  <footer class="bg-white border-t border-slate-200/90 py-4 mt-8">
-    <div class="max-w-7xl mx-auto px-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-      <div class="flex items-center gap-2">
-        <span class="font-bold text-slate-700 font-heading">Problem Statement #113</span>
-        <span>&bull;</span>
-        <span>Rule-Based OOP Inspection Checklist Engine</span>
-        <span>&bull;</span>
-        <span class="text-slate-400">Strategy Pattern &bull; Municipal Risk Allocation</span>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
-          <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> XSS &amp; CSV Injection Hardened
-        </span>
-      </div>
-    </div>
-  </footer>
-
-  <!-- Scripts -->
+  <!-- Application Scripts -->
   <script src="js/models.js"></script>
   <script src="js/vision.js"></script>
+  <script src="data/dataset_1000.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
