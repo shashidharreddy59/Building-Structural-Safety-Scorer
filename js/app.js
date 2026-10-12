@@ -413,12 +413,121 @@
     }
   }
 
+  const SQUAD_ALPHA_FULL = "Squad Alpha — Rapid Collapse Response Team (Lead: Eng. Sarah Jenkins, PE)";
+  const SQUAD_BRAVO_FULL = "Squad Bravo — Forensic Auditing Unit (Lead: Dr. Marcus Vance)";
+  const SQUAD_DELTA_FULL = "Squad Delta — Healthcare & Public Facilities (Lead: Insp. Tariq Al-Mansoor)";
+  const SQUAD_GAMMA_FULL = "Squad Gamma — Historic & Timber Taskforce (Lead: Eng. Elena Rostova)";
+
+  function determineSquadForBuilding(b, res) {
+    if (!res) res = engine.assess(b);
+
+    // 1. Check CSV metadata recommendation if present
+    const csvSquad = b._csvMeta && b._csvMeta.csvSquad ? b._csvMeta.csvSquad.toLowerCase() : "";
+    if (csvSquad) {
+      if (csvSquad.includes("delta") || csvSquad.includes("institutional") || csvSquad.includes("health") || csvSquad.includes("hospital") || csvSquad.includes("public")) {
+        return {
+          squad: SQUAD_DELTA_FULL,
+          priority: "CODE RED — Immediate Cordoning (4 Hours SLA)",
+          instructions: "High-consequence containment, verification of structural egress corridors, and emergency patient/occupant safety validation."
+        };
+      }
+      if (csvSquad.includes("gamma") || csvSquad.includes("historic") || csvSquad.includes("timber") || csvSquad.includes("wood") || csvSquad.includes("heritage") || csvSquad.includes("masonry")) {
+        return {
+          squad: SQUAD_GAMMA_FULL,
+          priority: "CODE RED — Immediate Cordoning (4 Hours SLA)",
+          instructions: "Historic lime mortar degradation analysis, load-bearing timber dry-rot testing, and facade tie-back stability audit."
+        };
+      }
+      if (csvSquad.includes("bravo") || csvSquad.includes("forensic") || csvSquad.includes("foundation") || csvSquad.includes("settlement")) {
+        return {
+          squad: SQUAD_BRAVO_FULL,
+          priority: "CODE ORANGE — Mandatory Priority Audit (24 Hours SLA)",
+          instructions: "Schmidt hammer hardness testing, core sampling extraction, and differential foundation settlement audit."
+        };
+      }
+      if (csvSquad.includes("alpha") || csvSquad.includes("rapid") || csvSquad.includes("collapse")) {
+        return {
+          squad: SQUAD_ALPHA_FULL,
+          priority: "CODE RED — Immediate Cordoning (4 Hours SLA)",
+          instructions: "Immediate priority perimeter cordoning, laser displacement monitoring, and ultrasonic pulse velocity verification."
+        };
+      }
+    }
+
+    // 2. Specialized Assignment based on occupancy typology, material, age and distress
+    const occ = (b.occupancyType || "").toLowerCase();
+    const mat = (b.primaryMaterial || "").toLowerCase();
+    const score = res.totalScore;
+
+    // High-consequence institutional & public assembly (Hospitals, Clinics, Schools, Universities, Public halls) -> Squad Delta
+    if (occ.includes("hospital") || occ.includes("school") || occ.includes("clinic") || occ.includes("public") || occ.includes("civic") || occ.includes("daycare") || occ.includes("assembly")) {
+      return {
+        squad: SQUAD_DELTA_FULL,
+        priority: score < 30 ? "CODE RED — Immediate Cordoning (4 Hours SLA)" : "CODE ORANGE — Mandatory Priority Audit (24 Hours SLA)",
+        instructions: "Immediate high-consequence containment, egress corridor verification, and patient/occupant safety assessment."
+      };
+    }
+
+    // Historic, Timber, Brick Masonry, Non-standard or aging structures (60+ yrs) -> Squad Gamma
+    if (mat.includes("wood") || mat.includes("timber") || mat.includes("brick") || mat.includes("masonry") || mat.includes("non-standard") || b.ageYears >= 60) {
+      return {
+        squad: SQUAD_GAMMA_FULL,
+        priority: score < 30 ? "CODE RED — Immediate Cordoning (4 Hours SLA)" : "CODE ORANGE — Mandatory Priority Audit (24 Hours SLA)",
+        instructions: "Historic masonry mortar degradation analysis, timber dry-rot testing, and facade tie-back integrity audit."
+      };
+    }
+
+    // Imminent collapse hazard, severe structural fatigue, critical spalling (score < 30 or maintenance <= 2) -> Squad Alpha
+    if (score < 30 || b.maintenanceScore <= 2) {
+      return {
+        squad: SQUAD_ALPHA_FULL,
+        priority: "CODE RED — Immediate Cordoning (4 Hours SLA)",
+        instructions: "Immediate priority perimeter cordoning, laser displacement monitoring, and ultrasonic pulse velocity verification."
+      };
+    }
+
+    // Forensic engineering audit, concrete carbonation, core testing, statutory code non-compliance -> Squad Bravo
+    return {
+      squad: SQUAD_BRAVO_FULL,
+      priority: "CODE ORANGE — Mandatory Priority Audit (24 Hours SLA)",
+      instructions: "Forensic Schmidt rebound hammer testing, foundation settlement audit, and statutory seismic compliance verification."
+    };
+  }
+
   function loadDispatches() {
     try {
       const raw = localStorage.getItem(DISPATCH_KEY);
       if (raw) {
         const d = JSON.parse(raw);
-        if (Array.isArray(d)) return d;
+        if (Array.isArray(d)) {
+          // Normalize existing dispatches so all 4 squads are represented according to building attributes
+          let modified = false;
+          const normalized = d.map(item => {
+            const b = buildings.find(x => x.buildingId === item.buildingId);
+            if (b && (!item.squad || item.squad === "Squad Alpha — Rapid Collapse Response Team" || item.squad.startsWith("Squad Alpha"))) {
+              const spec = determineSquadForBuilding(b);
+              if (spec.squad !== item.squad) {
+                item.squad = spec.squad;
+                item.priority = spec.priority;
+                if (!item.instructions || item.instructions.includes("Immediate priority cordoning and ultrasonic verification")) {
+                  item.instructions = spec.instructions;
+                }
+                if (b.dispatchDetails) {
+                  b.dispatchDetails.squad = spec.squad;
+                  b.dispatchDetails.priority = item.priority;
+                  b.dispatchDetails.instructions = item.instructions;
+                }
+                modified = true;
+              }
+            }
+            return item;
+          });
+          if (modified) {
+            saveStore();
+            try { localStorage.setItem(DISPATCH_KEY, JSON.stringify(normalized)); } catch (e) {}
+          }
+          return normalized;
+        }
       }
     } catch (e) { /* fallback */ }
     return [];
@@ -538,6 +647,7 @@
     const n = results.length;
     const criticalCount = results.filter(r => r.totalScore < 50.0).length;
     const dispatchedCount = buildings.filter(b => b.dispatchStatus === "DISPATCHED").length;
+    const pendingCriticalCount = results.filter(r => r.totalScore < 50.0 && r.building.dispatchStatus !== "DISPATCHED").length;
     const avgScore = n ? (results.reduce((s, r) => s + r.totalScore, 0) / n).toFixed(1) : "0.0";
     const compRate = n ? Math.round((buildings.filter(b => b.codeCompliant).length / n) * 100) + "%" : "0%";
 
@@ -545,7 +655,10 @@
     if ($("kpiTotal")) $("kpiTotal").textContent = n.toLocaleString();
     if ($("kpiFlagged")) $("kpiFlagged").textContent = criticalCount.toLocaleString();
     if ($("kpiDispatched")) $("kpiDispatched").textContent = dispatchedCount.toLocaleString();
-    if ($("kpiPendingDispatch")) $("kpiPendingDispatch").textContent = `(${criticalCount} critical)`;
+    if ($("kpiPendingDispatch")) {
+      $("kpiPendingDispatch").textContent = pendingCriticalCount > 0 ? `(${pendingCriticalCount} pending)` : `(All mobilized)`;
+      $("kpiPendingDispatch").className = pendingCriticalCount > 0 ? "text-[10px] font-mono font-bold text-amber-400" : "text-[10px] font-mono font-bold text-emerald-400";
+    }
     if ($("kpiAvg")) $("kpiAvg").textContent = avgScore;
     if ($("kpiComp")) $("kpiComp").textContent = compRate;
     if ($("headerDispatchCount")) $("headerDispatchCount").textContent = dispatchedCount;
@@ -554,7 +667,10 @@
     if ($("sidebarKpiTotal")) $("sidebarKpiTotal").textContent = n.toLocaleString();
     if ($("sidebarKpiFlagged")) $("sidebarKpiFlagged").textContent = criticalCount.toLocaleString();
     if ($("sidebarKpiDispatched")) $("sidebarKpiDispatched").textContent = dispatchedCount.toLocaleString();
-    if ($("sidebarKpiPendingDispatch")) $("sidebarKpiPendingDispatch").textContent = `(${criticalCount} critical)`;
+    if ($("sidebarKpiPendingDispatch")) {
+      $("sidebarKpiPendingDispatch").textContent = pendingCriticalCount > 0 ? `(${pendingCriticalCount} pending)` : `(All mobilized)`;
+      $("sidebarKpiPendingDispatch").className = pendingCriticalCount > 0 ? "text-[9px] font-mono font-bold text-amber-400" : "text-[9px] font-mono font-bold text-emerald-400";
+    }
     if ($("sidebarKpiAvg")) $("sidebarKpiAvg").textContent = avgScore;
     if ($("sidebarKpiComp")) $("sidebarKpiComp").textContent = compRate;
 
@@ -566,17 +682,40 @@
   }
 
   function renderHazardBanner(results) {
-    const criticals = results.filter(r => r.totalScore < 50.0);
-    const count = criticals.length;
-    $("criticalCountBadge").textContent = `🚩 ${count} Red Flagged`;
-    $("batchCountBadge").textContent = count;
-    
+    const banner = $("hazardAlertBanner");
+    const pendingCriticals = results.filter(r => r.totalScore < 50.0 && r.building.dispatchStatus !== "DISPATCHED");
+    const count = pendingCriticals.length;
+
+    // Update Officer Operations batch deploy button
+    const opDeployBtn = $("btnDeploymentsBatchDispatch");
+    if (opDeployBtn) {
+      if (count > 0) {
+        opDeployBtn.innerHTML = `<i data-lucide="siren" class="w-3.5 h-3.5"></i><span>Deploy to All Critical Sites (${count})</span>`;
+        opDeployBtn.disabled = false;
+        opDeployBtn.classList.remove("opacity-50", "cursor-not-allowed");
+      } else {
+        opDeployBtn.innerHTML = `<i data-lucide="shield-check" class="w-3.5 h-3.5"></i><span>All Critical Sites Mobilized</span>`;
+        opDeployBtn.disabled = true;
+        opDeployBtn.classList.add("opacity-50", "cursor-not-allowed");
+      }
+    }
+
     if (count > 0) {
-      $("dispatchSummaryText").textContent = `${count} structures exhibit critical failure or severe distress conditions (score < 50) requiring on-site officer dispatch.`;
-      $("btnBatchDispatch").classList.remove("hidden");
+      // Undispatched critical hazards exist or a new risk factor has appeared: show notification banner!
+      if (banner) banner.classList.remove("hidden");
+      if ($("criticalCountBadge")) $("criticalCountBadge").textContent = `🚩 ${count} RED FLAGGED`;
+      if ($("batchCountBadge")) $("batchCountBadge").textContent = count;
+      if ($("dispatchSummaryText")) {
+        $("dispatchSummaryText").textContent = `${count} structures exhibit critical failure or severe distress conditions (score < 50) requiring on-site officer dispatch.`;
+      }
+      if ($("btnBatchDispatch")) {
+        $("btnBatchDispatch").classList.remove("hidden");
+        $("btnBatchDispatch").innerHTML = `<i data-lucide="siren" class="w-4 h-4 text-white"></i><span>Send Officers to All Critical Sites (<span id="batchCountBadge">${count}</span>)</span>`;
+      }
     } else {
-      $("dispatchSummaryText").textContent = `All monitored structures currently meet standard structural stability thresholds (score ≥ 50).`;
-      $("btnBatchDispatch").classList.add("hidden");
+      // All critical sites have been dispatched! Remove notification until a new risk factor appears.
+      if (banner) banner.classList.add("hidden");
+      if ($("btnBatchDispatch")) $("btnBatchDispatch").classList.add("hidden");
     }
   }
 
@@ -840,8 +979,8 @@
             </div>
             ${d.instructions ? `<p class="text-xs text-slate-300 bg-slate-900/90 p-3 rounded-xl border border-slate-800 leading-relaxed font-medium"><strong>Directives:</strong> ${esc(d.instructions)}</p>` : ''}
             <div class="flex items-center justify-between text-xs text-slate-400 font-mono pt-1">
-              <span>Dispatched: ${esc(d.timestamp)}</span>
-              <button type="button" data-action="audit" data-id="${esc(d.buildingId)}" class="text-sky-400 hover:underline font-bold">View Audit Findings &rarr;</button>
+              <span>Dispatched: ${esc(d.dispatchedAt ? fmtLong(new Date(d.dispatchedAt)) : (d.timestamp || "Active"))}</span>
+              <button type="button" data-action="audit" data-id="${esc(d.buildingId)}" class="text-sky-400 hover:text-sky-300 hover:underline font-bold transition flex items-center gap-1">View Audit Findings &rarr;</button>
             </div>
           </div>
         `;
@@ -893,6 +1032,7 @@
     if (!res) return;
     targetDispatchId = id;
     const b = res.building;
+    const spec = determineSquadForBuilding(b, res);
 
     $("dispBuildingName").textContent = b.name + " (" + b.buildingId + ")";
     $("dispScoreBadge").textContent = "Score: " + res.totalScore.toFixed(1) + " (" + res.riskLevel + ")";
@@ -900,38 +1040,38 @@
     $("dispBuildingDetails").textContent = `${b.address} • ${b.primaryMaterial} • ${b.floors} Storeys • Age: ${b.ageYears} yrs`;
     $("dispHazardReasonBox").textContent = res.hazardFlagReason || "Mandatory municipal structural stability verification.";
 
-    // Auto-select recommended squad from CSV metadata if available
-    const csvSquad = b._csvMeta && b._csvMeta.csvSquad ? b._csvMeta.csvSquad : "";
+    // Auto-select recommended squad matching building domain
     const squadSelect = $("dispSquadSelect");
-    if (squadSelect && csvSquad) {
-      // Try to match CSV squad name to a select option (partial, case-insensitive)
-      const csvLower = csvSquad.toLowerCase();
+    if (squadSelect) {
       let matched = false;
       Array.from(squadSelect.options).forEach((opt, i) => {
-        if (!matched && opt.value.toLowerCase().includes(csvLower.slice(0, 12))) {
+        if (!matched && (opt.value === spec.squad || opt.value.toLowerCase().includes(spec.squad.toLowerCase().slice(0, 15)))) {
           squadSelect.selectedIndex = i;
           matched = true;
         }
       });
-      // If CSV says Alpha, select Alpha; Delta, select Delta; Gamma, select Gamma; etc.
-      if (!matched) {
-        if (csvLower.includes("alpha")) squadSelect.selectedIndex = 0;
-        else if (csvLower.includes("bravo")) squadSelect.selectedIndex = 1;
-        else if (csvLower.includes("delta")) squadSelect.selectedIndex = 2;
-        else if (csvLower.includes("gamma")) squadSelect.selectedIndex = 3;
-      }
     }
 
-    // Pre-fill directives with CSV action items (first 2 meaningful actions)
+    // Auto-select priority
+    const prioSelect = $("dispPrioritySelect");
+    if (prioSelect) {
+      Array.from(prioSelect.options).forEach((opt, i) => {
+        if (opt.value.includes(spec.priority.split("—")[0].trim())) {
+          prioSelect.selectedIndex = i;
+        }
+      });
+    }
+
+    // Pre-fill directives with CSV action items if available, else specialized squad instructions
     const csvActions = b._csvMeta && b._csvMeta.csvActions ? b._csvMeta.csvActions : "";
     const dispInstr = $("dispInstructions");
-    if (dispInstr && csvActions) {
-      const lines = csvActions.split(" | ").filter(l => l.trim() && !l.includes("\uD83D\uDEA8") && !l.includes("\u26A1")).slice(0, 2);
-      dispInstr.value = lines.length ? lines.join(" ") : "Immediate on-site structural parameter verification.";
-    } else if (dispInstr) {
-      dispInstr.value = res.isCritical
-        ? "Immediate on-site cordoning. Inspect load-bearing piers and verify crack progression. Dispatch if displacement exceeds 5mm."
-        : "Routine structural parameter verification and facade condition assessment.";
+    if (dispInstr) {
+      if (csvActions) {
+        const lines = csvActions.split(" | ").filter(l => l.trim() && !l.includes("\uD83D\uDEA8") && !l.includes("\u26A1")).slice(0, 2);
+        dispInstr.value = lines.length ? lines.join(" ") : spec.instructions;
+      } else {
+        dispInstr.value = spec.instructions;
+      }
     }
 
     openModal("dispatchModal");
@@ -985,20 +1125,21 @@
     const now = new Date().toISOString();
     criticals.forEach(r => {
       const b = r.building;
+      const spec = determineSquadForBuilding(b, r);
       b.dispatchStatus = "DISPATCHED";
       b.dispatchDetails = {
-        squad: "Squad Alpha — Rapid Collapse Response Team",
-        priority: "CODE RED — Immediate Cordoning (4 Hours SLA)",
-        instructions: "Immediate priority cordoning and ultrasonic verification.",
+        squad: spec.squad,
+        priority: spec.priority,
+        instructions: spec.instructions,
         dispatchedAt: now
       };
       dispatches.unshift({
         buildingId: b.buildingId,
         name: b.name,
         address: b.address,
-        squad: b.dispatchDetails.squad,
-        priority: b.dispatchDetails.priority,
-        instructions: b.dispatchDetails.instructions,
+        squad: spec.squad,
+        priority: spec.priority,
+        instructions: spec.instructions,
         dispatchedAt: now
       });
     });
@@ -1006,27 +1147,27 @@
     saveStore();
     saveDispatches();
     renderAll();
-    toast(`🚨 Dispatched field officers to all ${criticals.length} critical structures!`, "success");
+    toast(`🚨 Mobilized specialized squads (Alpha, Bravo, Delta, Gamma) to all ${criticals.length} critical sites!`, "success");
   }
 
   function renderDispatchLogUI() {
-    const list = $("dispatchLogList");
-    const empty = $("dispatchLogEmpty");
+    const list = $("modalDispatchLogList") || $("dispatchLogList");
+    const empty = $("modalDispatchLogEmpty") || $("dispatchLogEmpty");
     if (!list) return;
 
     if (!dispatches.length) {
       list.innerHTML = "";
-      empty.classList.remove("hidden");
+      if (empty) empty.classList.remove("hidden");
       return;
     }
-    empty.classList.add("hidden");
+    if (empty) empty.classList.add("hidden");
 
-    list.innerHTML = dispatches.slice(0, 30).map((d, i) =>
+    list.innerHTML = dispatches.slice(0, 50).map((d, i) =>
       '<div class="rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 space-y-1.5 shadow-sm">' +
-      '<div class="flex items-center justify-between"><div class="font-bold text-white font-heading text-xs">#' + (i + 1) + ' ' + esc(d.name) + ' (' + esc(d.buildingId) + ')</div><span class="rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-mono text-[10px] font-bold px-2 py-0.5">' + esc(d.priority.split("—")[0]) + '</span></div>' +
+      '<div class="flex items-center justify-between"><div class="font-bold text-white font-heading text-xs">#' + (i + 1) + ' ' + esc(d.name || d.buildingId) + ' (' + esc(d.buildingId) + ')</div><span class="rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-mono text-[10px] font-bold px-2 py-0.5">' + esc((d.priority || "").split("—")[0]) + '</span></div>' +
       '<div class="text-[11px] text-indigo-300 font-semibold">' + esc(d.squad) + '</div>' +
       '<p class="text-[11px] text-slate-300 italic">"' + esc(d.instructions) + '"</p>' +
-      '<div class="text-[10px] text-slate-400 font-mono flex items-center justify-between border-t border-slate-800 pt-1.5"><span>Target: ' + esc(d.address) + '</span><span>Sent: ' + esc(fmtLong(new Date(d.dispatchedAt))) + '</span></div></div>').join("");
+      '<div class="text-[10px] text-slate-400 font-mono flex items-center justify-between border-t border-slate-800 pt-1.5"><span>Target: ' + esc(d.address || "") + '</span><button type="button" data-action="audit" data-id="' + esc(d.buildingId) + '" class="text-sky-400 hover:underline font-bold">View Audit Findings &rarr;</button></div></div>').join("");
   }
 
   /* ======================================================================
@@ -1638,13 +1779,19 @@ $("auditContent").innerHTML =
     on("btnBatchDispatch", "click", batchDispatchCritical);
     on("btnConfirmDispatch", "click", confirmDispatch);
     on("btnOpenDispatchLog", "click", () => switchView("deployments"));
-    on("btnClearDispatchHistory", "click", () => {
+    const clearDispatchHandler = () => {
       dispatches = [];
+      buildings.forEach(b => {
+        b.dispatchStatus = "NONE";
+        b.dispatchDetails = null;
+      });
+      saveStore();
       saveDispatches();
-      renderDispatchLogUI();
-      renderOperationsView();
-      toast("Dispatch history cleared.", "info");
-    });
+      renderAll();
+      toast("Dispatch history cleared & critical sites reset for mobilization.", "info");
+    };
+    on("btnClearDispatchHistory", "click", clearDispatchHandler);
+    on("btnClearModalDispatchHistory", "click", clearDispatchHandler);
 
     // Dataset Switchers & Quick Resets
     on("btnThemeToggle", "click", toggleTheme);
@@ -1748,8 +1895,7 @@ $("auditContent").innerHTML =
         }
       }
     };
-    $("queueBody").addEventListener("click", delegate);
-    $("auditContent").addEventListener("click", delegate);
+    document.addEventListener("click", delegate);
     $("btnPrint").addEventListener("click", printNotice);
   }
 
